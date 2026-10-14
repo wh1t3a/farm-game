@@ -208,6 +208,11 @@ export class GameScene extends Phaser.Scene {
   private soundButtonText!: Phaser.GameObjects.Text;
   private musicButtonText!: Phaser.GameObjects.Text;
 
+  // Пауза
+  private isPaused = false;
+  private pauseModal!: Phaser.GameObjects.Container;
+  private pauseButtonText!: Phaser.GameObjects.Text;
+
   constructor() {
     super('GameScene');
   }
@@ -231,18 +236,20 @@ export class GameScene extends Phaser.Scene {
     this.createShopModal(width, height);
     this.createFishingMinigameModal(width, height);
     this.createCrowMinigameModal(width, height);
+    this.createPauseModal(width, height);
 
     this.refreshMarketPrices(true);
 
     // Клик мышью
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.initAudio();
-      if (this.isShopOpen || this.isMarketOpen || this.isFishingActive || this.isCrowMinigameActive) return;
+      if (this.isPaused || this.isShopOpen || this.isMarketOpen || this.isFishingActive || this.isCrowMinigameActive) return;
       this.handlePointerClick(pointer);
     });
   }
 
   private resetState(): void {
+    this.isPaused = false;
     this.coins = 25;
     this.waterCanLevel = 1;
     this.water = this.getMaxWater();
@@ -731,8 +738,19 @@ export class GameScene extends Phaser.Scene {
       color: '#e2e8f0',
     }).setDepth(36);
 
+    // Кнопка паузы
+    this.pauseButtonText = this.add.text(width - 440, 34, '⏸️ Пауза [P]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#facc15',
+      backgroundColor: '#1e293b',
+      padding: { x: 8, y: 5 },
+    }).setDepth(36).setInteractive({ useHandCursor: true });
+
+    this.pauseButtonText.on('pointerdown', () => this.togglePause());
+
     // Кнопка музыки в стиле Minecraft C418
-    this.musicButtonText = this.add.text(width - 330, 34, '🎵 Музыка: Вкл', {
+    this.musicButtonText = this.add.text(width - 325, 34, '🎵 Музыка: Вкл', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#a7f3d0',
@@ -747,7 +765,7 @@ export class GameScene extends Phaser.Scene {
     });
 
     // Кнопка звуков
-    this.soundButtonText = this.add.text(width - 200, 34, '🔊 Звуки', {
+    this.soundButtonText = this.add.text(width - 215, 34, '🔊 Звуки', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#94a3b8',
@@ -771,7 +789,7 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(36).setInteractive({ useHandCursor: true });
     shopBtn.on('pointerdown', () => this.openShopModal());
 
-    this.add.text(width / 2, this.scale.height - 18, 'WASD / Клик — Идти  |  ПРОБЕЛ / Клик рядом — Действие  |  Склад справа: Продажа  |  Пруд: Рыбалка', {
+    this.add.text(width / 2, this.scale.height - 18, 'WASD / Клик — Идти  |  ПРОБЕЛ — Действие  |  P / Кнопка — Пауза  |  Склад: Рынок  |  Пруд: Рыбалка', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#94a3b8',
@@ -795,6 +813,22 @@ export class GameScene extends Phaser.Scene {
     const eKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
     const enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
     this.actionKeys = [spaceKey, eKey, enterKey];
+
+    // Клавиша P для паузы
+    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P).on('down', () => {
+      this.togglePause();
+    });
+
+    // Клавиша ESC
+    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
+      if (this.isMarketOpen) {
+        this.closeMarketModal();
+      } else if (this.isShopOpen) {
+        this.closeShopModal();
+      } else {
+        this.togglePause();
+      }
+    });
   }
 
   // --- МОДАЛЬНОЕ ОКНО РЫНКА (ЧЁТКИЙ СПИСОК ЦЕН И ПРОДАЖА) ---
@@ -1234,9 +1268,103 @@ export class GameScene extends Phaser.Scene {
     this.scarecrowVisual.add([post, arms, head, hat, text]);
   }
 
+  // --- ПАУЗА ИГРЫ (ЗАСТЫВАНИЕ ВСЕХ ОБЪЕКТОВ И ТАЙМЕРОВ) ---
+
+  private togglePause(): void {
+    if (this.isShopOpen) this.closeShopModal();
+    if (this.isMarketOpen) this.closeMarketModal();
+
+    this.isPaused = !this.isPaused;
+
+    if (this.isPaused) {
+      this.tweens.pauseAll();
+      this.pauseButtonText.setText('▶️ Играть');
+      this.updatePauseModalContent();
+      this.pauseModal.setVisible(true);
+    } else {
+      this.tweens.resumeAll();
+      this.pauseButtonText.setText('⏸️ Пауза [P]');
+      this.pauseModal.setVisible(false);
+    }
+  }
+
+  private createPauseModal(width: number, height: number): void {
+    this.pauseModal = this.add.container(width / 2, height / 2).setDepth(150).setVisible(false);
+
+    // Полупрозрачный фон, блокирующий клики
+    const backdrop = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setInteractive();
+
+    const panel = this.add.rectangle(0, 0, 500, 350, 0x0f172a);
+    panel.setStrokeStyle(3, 0x38bdf8);
+
+    const title = this.add.text(0, -130, '⏸️ ИГРА НА ПАУЗЕ', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '24px',
+      color: '#38bdf8',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const subtitle = this.add.text(0, -95, 'Все таймеры, грядки, вороны и рыбалка застыли', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#94a3b8',
+    }).setOrigin(0.5);
+
+    const statsText = this.add.text(0, -15, '', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#f8fafc',
+      align: 'center',
+      lineSpacing: 8,
+    }).setOrigin(0.5).setName('pauseStatsText');
+
+    const resumeBtn = this.add.text(0, 80, '▶️ ПРОДОЛЖИТЬ ИГРУ [P / ESC]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff',
+      backgroundColor: '#2563eb',
+      padding: { x: 24, y: 10 },
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    resumeBtn.on('pointerdown', () => this.togglePause());
+
+    const tip = this.add.text(0, 135, 'Нажмите P или ESC на клавиатуре, чтобы вернуться к игре', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#64748b',
+    }).setOrigin(0.5);
+
+    this.pauseModal.add([backdrop, panel, title, subtitle, statsText, resumeBtn, tip]);
+  }
+
+  private updatePauseModalContent(): void {
+    const stats = this.pauseModal.getByName('pauseStatsText') as Phaser.GameObjects.Text;
+    const unlockedZones = this.zones
+      .filter((z) => z.unlocked)
+      .map((z) => CROPS[z.cropType].name)
+      .join(', ');
+    const countHarvest =
+      this.inventory.carrot +
+      this.inventory.wheat +
+      this.inventory.strawberry +
+      this.inventory.pumpkin;
+
+    stats.setText(
+      `🪙 Золото в казне: ${this.coins} монет\n` +
+      `🧺 Урожай в корзине (${countHarvest} шт.): 🥕:${this.inventory.carrot}  🌾:${this.inventory.wheat}  🍓:${this.inventory.strawberry}  🎃:${this.inventory.pumpkin}\n` +
+      `💧 Лейка: ${this.water}/${this.getMaxWater()} | Скорость фермера: Ур. ${this.speedLevel}\n` +
+      `🌾 Пугало: ${this.hasScarecrow ? 'Установлено (защита активна)' : 'Не куплено'}\n` +
+      `🗺️ Открытые территории: ${unlockedZones}`
+    );
+  }
+
   // --- ИГРОВОЙ ЦИКЛ ОБНОВЛЕНИЯ ---
 
   update(_time: number, delta: number): void {
+    // Если включена пауза — застывают абсолютно все объекты и таймеры!
+    if (this.isPaused) return;
+
     const seconds = delta / 1000;
 
     // Фоновая эмбиент музыка в стиле Minecraft
@@ -1618,6 +1746,8 @@ export class GameScene extends Phaser.Scene {
   // --- ИНТЕРАКЦИЯ И КЛИКИ ---
 
   private handlePointerClick(pointer: Phaser.Input.Pointer): void {
+    if (this.isPaused) return;
+
     const clickedX = pointer.x;
     const clickedY = pointer.y;
 
