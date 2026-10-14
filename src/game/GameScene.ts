@@ -129,6 +129,23 @@ export class GameScene extends Phaser.Scene {
   private scarecrowCost = 140;
   private scarecrowVisual: Phaser.GameObjects.Container | null = null;
 
+  // Автоматизация: Орошение (Спринклеры)
+  private sprinklerLevel = 0; // 0..4
+  private sprinklerCosts = [80, 150, 240, 350];
+  private sprinklerTimer = 0;
+  private sprinklerVisuals: Phaser.GameObjects.Container[] = [];
+
+  // Автоматизация: Наёмный помощник (Фермер-подмастерье)
+  private hasWorker = false;
+  private workerCost = 160;
+  private workerContainer: Phaser.GameObjects.Container | null = null;
+  private workerStamina = 100;
+  private workerState: 'idle' | 'moving' | 'working' | 'tired' = 'idle';
+  private workerTargetPlot: Plot | null = null;
+  private workerActionTimer = 0;
+  private workerBarFill: Phaser.GameObjects.Rectangle | null = null;
+  private workerStatusText: Phaser.GameObjects.Text | null = null;
+
   // Локации
   private wellX = 90;
   private wellY = 270;
@@ -266,6 +283,18 @@ export class GameScene extends Phaser.Scene {
     this.isCrowMinigameActive = false;
     this.isGoldenFishActive = false;
     this.fishTimer = 40;
+    this.sprinklerLevel = 0;
+    this.sprinklerTimer = 0;
+    this.sprinklerVisuals.forEach((v) => v.destroy());
+    this.sprinklerVisuals = [];
+    this.hasWorker = false;
+    this.workerStamina = 100;
+    this.workerState = 'idle';
+    this.workerTargetPlot = null;
+    if (this.workerContainer) {
+      this.workerContainer.destroy();
+      this.workerContainer = null;
+    }
   }
 
   private getMaxWater(): number {
@@ -1102,50 +1131,52 @@ export class GameScene extends Phaser.Scene {
     this.shopModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false);
 
     const backdrop = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setInteractive();
-    const panel = this.add.rectangle(0, 0, 520, 380, 0x0f172a);
+    const panel = this.add.rectangle(0, 0, 520, 480, 0x0f172a);
     panel.setStrokeStyle(3, 0x38bdf8);
 
-    const title = this.add.text(0, -150, '🛠️ ЛАВКА УЛУЧШЕНИЙ ФЕРМЕРА', {
+    const title = this.add.text(0, -205, '🛠️ ЛАВКА УЛУЧШЕНИЙ И АВТОМАТИЗАЦИИ', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '20px',
+      fontSize: '18px',
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const waterBtn = this.createShopItemRow(0, -80, 'waterCan');
-    const speedBtn = this.createShopItemRow(0, -10, 'boots');
-    const scarecrowBtn = this.createShopItemRow(0, 60, 'scarecrow');
+    const waterBtn = this.createShopItemRow(0, -145, 'waterCan');
+    const speedBtn = this.createShopItemRow(0, -85, 'boots');
+    const scarecrowBtn = this.createShopItemRow(0, -25, 'scarecrow');
+    const sprinklerBtn = this.createShopItemRow(0, 35, 'sprinkler');
+    const workerBtn = this.createShopItemRow(0, 95, 'worker');
 
-    const closeBtn = this.add.text(0, 140, 'ЗАКРЫТЬ [ESC]', {
+    const closeBtn = this.add.text(0, 180, 'ЗАКРЫТЬ [ESC]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '16px',
+      fontSize: '15px',
       color: '#ffffff',
       backgroundColor: '#334155',
-      padding: { x: 20, y: 8 },
+      padding: { x: 22, y: 7 },
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     closeBtn.on('pointerdown', () => this.closeShopModal());
 
-    this.shopModal.add([backdrop, panel, title, waterBtn, speedBtn, scarecrowBtn, closeBtn]);
+    this.shopModal.add([backdrop, panel, title, waterBtn, speedBtn, scarecrowBtn, sprinklerBtn, workerBtn, closeBtn]);
   }
 
-  private createShopItemRow(x: number, y: number, itemType: 'waterCan' | 'boots' | 'scarecrow'): Phaser.GameObjects.Container {
+  private createShopItemRow(x: number, y: number, itemType: 'waterCan' | 'boots' | 'scarecrow' | 'sprinkler' | 'worker'): Phaser.GameObjects.Container {
     const row = this.add.container(x, y).setName(`row_${itemType}`);
-    const bg = this.add.rectangle(0, 0, 460, 52, 0x1e293b);
+    const bg = this.add.rectangle(0, 0, 470, 50, 0x1e293b);
     bg.setStrokeStyle(2, 0x475569);
 
-    const text = this.add.text(-210, 0, '', {
+    const text = this.add.text(-220, 0, '', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#f8fafc',
     }).setOrigin(0, 0.5).setName('label');
 
-    const btn = this.add.text(140, 0, 'КУПИТЬ', {
+    const btn = this.add.text(155, 0, 'КУПИТЬ', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#ffffff',
       backgroundColor: '#2563eb',
-      padding: { x: 12, y: 6 },
+      padding: { x: 10, y: 6 },
       fontStyle: 'bold',
     }).setOrigin(0.5).setName('buyBtn').setInteractive({ useHandCursor: true });
 
@@ -1167,6 +1198,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateShopModalContents(): void {
+    // 1. Лейка
     const waterRow = this.shopModal.getByName('row_waterCan') as Phaser.GameObjects.Container;
     const waterLabel = waterRow.getByName('label') as Phaser.GameObjects.Text;
     const waterBtn = waterRow.getByName('buyBtn') as Phaser.GameObjects.Text;
@@ -1181,19 +1213,21 @@ export class GameScene extends Phaser.Scene {
       waterBtn.setText('МАКС').setBackgroundColor('#334155');
     }
 
+    // 2. Сапоги
     const speedRow = this.shopModal.getByName('row_boots') as Phaser.GameObjects.Container;
     const speedLabel = speedRow.getByName('label') as Phaser.GameObjects.Text;
     const speedBtn = speedRow.getByName('buyBtn') as Phaser.GameObjects.Text;
 
     if (this.speedLevel < this.speedValues.length) {
       const cost = this.speedUpgradeCosts[this.speedLevel - 1];
-      speedLabel.setText(`👟 Скорость фермера (Ур. ${this.speedLevel} ➔ ${this.speedLevel + 1}): +25% скорости`);
+      speedLabel.setText(`👟 Сапоги скорости (Ур. ${this.speedLevel} ➔ ${this.speedLevel + 1}): +25% бега`);
       speedBtn.setText(`Купить (${cost} 🪙)`).setBackgroundColor(this.coins >= cost ? '#2563eb' : '#475569');
     } else {
-      speedLabel.setText('👟 Скорость фермера: МАКСИМАЛЬНЫЙ УРОВЕНЬ');
+      speedLabel.setText('👟 Сапоги скорости: МАКСИМАЛЬНЫЙ УРОВЕНЬ');
       speedBtn.setText('МАКС').setBackgroundColor('#334155');
     }
 
+    // 3. Пугало
     const scareRow = this.shopModal.getByName('row_scarecrow') as Phaser.GameObjects.Container;
     const scareLabel = scareRow.getByName('label') as Phaser.GameObjects.Text;
     const scareBtn = scareRow.getByName('buyBtn') as Phaser.GameObjects.Text;
@@ -1205,9 +1239,37 @@ export class GameScene extends Phaser.Scene {
       scareLabel.setText('🌾 Пугало установлено на поле (Активно)');
       scareBtn.setText('КУПЛЕНО').setBackgroundColor('#334155');
     }
+
+    // 4. Орошение (Спринклеры)
+    const sprinklerRow = this.shopModal.getByName('row_sprinkler') as Phaser.GameObjects.Container;
+    const sprinklerLabel = sprinklerRow.getByName('label') as Phaser.GameObjects.Text;
+    const sprinklerBtn = sprinklerRow.getByName('buyBtn') as Phaser.GameObjects.Text;
+
+    if (this.sprinklerLevel < this.sprinklerCosts.length) {
+      const cost = this.sprinklerCosts[this.sprinklerLevel];
+      const zoneName = this.zones[this.sprinklerLevel]?.name || `Зона ${this.sprinklerLevel + 1}`;
+      sprinklerLabel.setText(`💦 Спринклер (${zoneName}): Авто-полив`);
+      sprinklerBtn.setText(`Купить (${cost} 🪙)`).setBackgroundColor(this.coins >= cost ? '#2563eb' : '#475569');
+    } else {
+      sprinklerLabel.setText('💦 Спринклеры установлены на всех открытых полях');
+      sprinklerBtn.setText('МАКС').setBackgroundColor('#334155');
+    }
+
+    // 5. Наёмный помощник
+    const workerRow = this.shopModal.getByName('row_worker') as Phaser.GameObjects.Container;
+    const workerLabel = workerRow.getByName('label') as Phaser.GameObjects.Text;
+    const workerBtn = workerRow.getByName('buyBtn') as Phaser.GameObjects.Text;
+
+    if (!this.hasWorker) {
+      workerLabel.setText(`🧑‍🌾 Нанять помощника-подмастерье: Авто-сбор`);
+      workerBtn.setText(`Нанять (${this.workerCost} 🪙)`).setBackgroundColor(this.coins >= this.workerCost ? '#2563eb' : '#475569');
+    } else {
+      workerLabel.setText(`🧑‍🌾 Помощник нанят (Бодрость: ${Math.round(this.workerStamina)}%)`);
+      workerBtn.setText('НАНЯТ').setBackgroundColor('#334155');
+    }
   }
 
-  private buyShopItem(itemType: 'waterCan' | 'boots' | 'scarecrow'): void {
+  private buyShopItem(itemType: 'waterCan' | 'boots' | 'scarecrow' | 'sprinkler' | 'worker'): void {
     if (itemType === 'waterCan') {
       if (this.waterCanLevel >= this.waterCapacities.length) return;
       const cost = this.waterUpgradeCosts[this.waterCanLevel - 1];
@@ -1242,11 +1304,233 @@ export class GameScene extends Phaser.Scene {
       this.spawnScarecrowVisual();
       this.playPowerup();
       this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `🌾 Пугало установлено!`, '#4ade80');
+    } else if (itemType === 'sprinkler') {
+      if (this.sprinklerLevel >= this.sprinklerCosts.length) return;
+      const cost = this.sprinklerCosts[this.sprinklerLevel];
+      if (this.coins < cost) {
+        this.playErrorSound();
+        return;
+      }
+      this.coins -= cost;
+      this.sprinklerLevel++;
+      this.spawnSprinklerVisual(this.sprinklerLevel);
+      this.playPowerup();
+      this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `💦 Спринклер установлен! Авто-полив активен!`, '#38bdf8');
+    } else if (itemType === 'worker') {
+      if (this.hasWorker) return;
+      if (this.coins < this.workerCost) {
+        this.playErrorSound();
+        return;
+      }
+      this.coins -= this.workerCost;
+      this.hasWorker = true;
+      this.spawnWorkerVisual();
+      this.playPowerup();
+      this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `🧑‍🌾 Помощник нанят и готов к труду!`, '#4ade80');
     }
 
     this.updateCoinsHud();
     this.updateWaterHud();
     this.updateShopModalContents();
+  }
+
+  private spawnSprinklerVisual(level: number): void {
+    const coords = [
+      { x: 490, y: 125 }, // Zone 1 (Морковь)
+      { x: 490, y: 255 }, // Zone 2 (Пшеница)
+      { x: 490, y: 385 }, // Zone 3 (Клубника)
+      { x: 485, y: 505 }, // Zone 4 (Тыква)
+    ];
+
+    const pos = coords[level - 1];
+    if (!pos) return;
+
+    const cont = this.add.container(pos.x, pos.y).setDepth(12);
+    const base = this.add.rectangle(0, 4, 18, 12, 0x475569);
+    const pipe = this.add.rectangle(0, -4, 6, 12, 0x94a3b8);
+    const nozzle = this.add.circle(0, -12, 6, 0x38bdf8);
+    const label = this.add.text(0, -24, '💦 Спринклер', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#93c5fd',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    cont.add([base, pipe, nozzle, label]);
+    this.sprinklerVisuals.push(cont);
+  }
+
+  private updateSprinklers(seconds: number): void {
+    if (this.sprinklerLevel <= 0) return;
+
+    this.sprinklerTimer += seconds;
+    if (this.sprinklerTimer >= 2.5) {
+      this.sprinklerTimer = 0;
+
+      let anyWatered = false;
+      for (let z = 1; z <= this.sprinklerLevel; z++) {
+        const zonePlots = this.plots.filter((p) => p.unlocked && p.zoneId === z && p.state === 'seeded');
+        for (const plot of zonePlots) {
+          plot.state = 'growing';
+          plot.isWatered = true;
+          this.updatePlotVisuals(plot);
+          this.showFloatingNotice(plot.x, plot.y - 25, '💧 Спринклер полил!', '#38bdf8');
+          anyWatered = true;
+        }
+      }
+
+      if (anyWatered) {
+        this.playWaterSplash();
+      }
+    }
+  }
+
+  private spawnWorkerVisual(): void {
+    if (this.workerContainer) return;
+    const startX = 760;
+    const startY = 320;
+
+    this.workerContainer = this.add.container(startX, startY).setDepth(20);
+
+    const shadow = this.add.ellipse(0, 16, 30, 10, 0x000000, 0.35);
+    const body = this.add.rectangle(0, 4, 22, 26, 0x15803d);
+    body.setStrokeStyle(2, 0x166534);
+
+    const head = this.add.circle(0, -14, 11, 0xfde047);
+    const cap = this.add.rectangle(0, -22, 22, 8, 0x0284c7);
+
+    const badge = this.add.text(0, -32, '🧑‍🌾 Помощник', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#86efac',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const barBg = this.add.rectangle(0, -42, 38, 5, 0x1e293b);
+    this.workerBarFill = this.add.rectangle(-19, -42, 38, 5, 0x22c55e);
+    this.workerBarFill.setOrigin(0, 0.5);
+
+    this.workerStatusText = this.add.text(0, 26, 'Готов к работе', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#cbd5e1',
+      backgroundColor: '#0f172aa0',
+      padding: { x: 3, y: 1 },
+    }).setOrigin(0.5);
+
+    this.workerContainer.add([shadow, body, head, cap, badge, barBg, this.workerBarFill, this.workerStatusText]);
+    this.workerContainer.setSize(38, 48);
+    this.workerContainer.setInteractive({ useHandCursor: true });
+    this.workerContainer.on('pointerdown', () => this.treatWorker());
+  }
+
+  private treatWorker(): void {
+    if (!this.hasWorker || !this.workerContainer) return;
+    if (this.workerStamina >= 100) {
+      this.showFloatingNotice(this.workerContainer.x, this.workerContainer.y - 30, 'Помощник полон сил и усердно трудится!', '#86efac');
+      return;
+    }
+
+    this.workerStamina = 100;
+    this.workerState = 'idle';
+    if (this.workerStatusText) this.workerStatusText.setText('Полон сил!');
+    this.playPowerup();
+    this.showFloatingNotice(this.workerContainer.x, this.workerContainer.y - 30, '😋 Помощник перекусил и полон сил (100%)!', '#4ade80');
+  }
+
+  private updateWorker(seconds: number): void {
+    if (!this.hasWorker || !this.workerContainer) return;
+
+    if (this.workerBarFill) {
+      this.workerBarFill.width = 38 * (this.workerStamina / 100);
+      this.workerBarFill.setFillStyle(this.workerStamina > 30 ? 0x22c55e : 0xef4444);
+    }
+
+    if (this.workerState === 'tired') {
+      if (this.workerStatusText) this.workerStatusText.setText('💤 Отдыхает...');
+      this.workerContainer.rotation = 0;
+
+      this.workerStamina = Math.min(100, this.workerStamina + seconds * 5.5);
+      if (this.workerStamina >= 100) {
+        this.workerState = 'idle';
+        if (this.workerStatusText) this.workerStatusText.setText('Готов');
+        this.showFloatingNotice(this.workerContainer.x, this.workerContainer.y - 30, '🧑‍🌾 Помощник отдохнул и вернулся к работе!', '#4ade80');
+      }
+      return;
+    }
+
+    if (this.workerState === 'idle') {
+      if (this.workerStatusText) this.workerStatusText.setText('Ищет грядку');
+      this.workerContainer.rotation = 0;
+
+      const ripePlots = this.plots.filter((p) => p.unlocked && p.state === 'ready');
+      if (ripePlots.length > 0) {
+        this.workerTargetPlot = Phaser.Utils.Array.GetRandom(ripePlots) as Plot;
+        this.workerState = 'moving';
+        return;
+      }
+
+      const emptyPlots = this.plots.filter((p) => p.unlocked && p.state === 'empty');
+      if (emptyPlots.length > 0) {
+        this.workerTargetPlot = Phaser.Utils.Array.GetRandom(emptyPlots) as Plot;
+        this.workerState = 'moving';
+        return;
+      }
+    }
+
+    if (this.workerState === 'moving' && this.workerTargetPlot) {
+      const target = this.workerTargetPlot;
+      const dist = Phaser.Math.Distance.Between(this.workerContainer.x, this.workerContainer.y, target.x, target.y);
+
+      if (dist <= 25) {
+        this.workerState = 'working';
+        this.workerActionTimer = 0.7;
+        this.workerContainer.rotation = 0;
+        if (this.workerStatusText) this.workerStatusText.setText('Работает 🌾');
+      } else {
+        const angle = Phaser.Math.Angle.Between(this.workerContainer.x, this.workerContainer.y, target.x, target.y);
+        const speed = 160;
+        this.workerContainer.x += Math.cos(angle) * speed * seconds;
+        this.workerContainer.y += Math.sin(angle) * speed * seconds;
+        this.workerContainer.rotation = Math.sin(Date.now() / 90) * 0.08;
+      }
+      return;
+    }
+
+    if (this.workerState === 'working' && this.workerTargetPlot) {
+      this.workerActionTimer -= seconds;
+      if (this.workerActionTimer <= 0) {
+        const target = this.workerTargetPlot;
+        const info = CROPS[target.cropType];
+
+        if (target.state === 'ready') {
+          this.inventory[target.cropType] += 1;
+          this.updateInventoryHud();
+          target.state = 'empty';
+          target.growthProgress = 0;
+          this.updatePlotVisuals(target);
+          this.playHarvest();
+          this.showFloatingNotice(target.x, target.y - 25, `+1 ${info.icon} (помощник)`, '#facc15');
+        } else if (target.state === 'empty') {
+          target.state = 'seeded';
+          target.growthProgress = 0;
+          target.isWatered = false;
+          this.updatePlotVisuals(target);
+          this.playPlant();
+          this.showFloatingNotice(target.x, target.y - 25, '🌱 Посажено (помощник)', '#86efac');
+        }
+
+        this.workerStamina = Math.max(0, this.workerStamina - 7);
+        if (this.workerStamina <= 0) {
+          this.workerState = 'tired';
+          this.showFloatingNotice(this.workerContainer.x, this.workerContainer.y - 30, '💤 Помощник устал! Нужен отдых или перекус', '#f87171');
+        } else {
+          this.workerState = 'idle';
+        }
+
+        this.workerTargetPlot = null;
+      }
+    }
   }
 
   private spawnScarecrowVisual(): void {
@@ -1403,6 +1687,8 @@ export class GameScene extends Phaser.Scene {
     this.updatePests(seconds);
     this.updateMarket(seconds);
     this.updateFishingEvent(seconds);
+    this.updateSprinklers(seconds);
+    this.updateWorker(seconds);
     this.detectInteractionTarget();
     this.checkActionKeys();
   }
@@ -1861,6 +2147,19 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Помощник
+    if (this.hasWorker && this.workerContainer) {
+      const distToWorker = Phaser.Math.Distance.Between(px, py, this.workerContainer.x, this.workerContainer.y);
+      if (distToWorker <= 55) {
+        if (this.workerState === 'tired' || this.workerStamina < 100) {
+          this.showPrompt('[ПРОБЕЛ / Клик] Угостить помощника (Восстановить силы)');
+        } else {
+          this.showPrompt(`🧑‍🌾 Помощник трудится (Бодрость: ${Math.round(this.workerStamina)}%)`);
+        }
+        return;
+      }
+    }
+
     // Таблички закрытых зон
     for (const zone of this.zones) {
       if (!zone.unlocked && Phaser.Math.Distance.Between(px, py, zone.signX, zone.signY) <= INTERACT_RADIUS) {
@@ -1949,6 +2248,14 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Math.Distance.Between(px, py, this.shopX, this.shopY) <= INTERACT_RADIUS + 20) {
       this.openShopModal();
       return;
+    }
+
+    if (this.hasWorker && this.workerContainer) {
+      const distToWorker = Phaser.Math.Distance.Between(px, py, this.workerContainer.x, this.workerContainer.y);
+      if (distToWorker <= 55) {
+        this.treatWorker();
+        return;
+      }
     }
 
     for (const zone of this.zones) {
