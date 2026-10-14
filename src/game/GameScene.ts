@@ -3,7 +3,7 @@ import Phaser from 'phaser';
 /**
  * Типы культур и их характеристики
  */
-export type CropType = 'carrot' | 'wheat' | 'strawberry' | 'pumpkin';
+export type CropType = 'carrot' | 'wheat' | 'strawberry' | 'pumpkin' | 'corn' | 'watermelon';
 
 export interface CropInfo {
   name: string;
@@ -51,6 +51,24 @@ export const CROPS: Record<CropType, CropInfo> = {
     maxPrice: 280,
     growthWatered: 13.0,
     growthDry: 36.0,
+  },
+  corn: {
+    name: 'Кукуруза',
+    icon: '🌽',
+    basePrice: 240,
+    minPrice: 170,
+    maxPrice: 400,
+    growthWatered: 7.5,
+    growthDry: 20.0,
+  },
+  watermelon: {
+    name: 'Арбуз',
+    icon: '🍉',
+    basePrice: 450,
+    minPrice: 300,
+    maxPrice: 750,
+    growthWatered: 11.5,
+    growthDry: 32.0,
   },
 };
 
@@ -104,7 +122,7 @@ export class GameScene extends Phaser.Scene {
   private wasd!: Record<'up' | 'down' | 'left' | 'right', Phaser.Input.Keyboard.Key>;
   private actionKeys!: Phaser.Input.Keyboard.Key[];
   private targetMovePoint: { x: number; y: number } | null = null;
-  private pendingTargetObject: { type: 'well' | 'barn' | 'shop' | 'pond' | 'zoneSign' | 'plot'; obj?: any } | null = null;
+  private pendingTargetObject: { type: 'well' | 'barn' | 'shop' | 'pond' | 'zoneSign' | 'plot' | 'phase2Gate' | 'phase2Well'; obj?: any } | null = null;
 
   // Ресурсы
   private coins = 25;
@@ -114,6 +132,8 @@ export class GameScene extends Phaser.Scene {
     wheat: 0,
     strawberry: 0,
     pumpkin: 0,
+    corn: 0,
+    watermelon: 0,
   };
 
   // Прокачка
@@ -130,8 +150,8 @@ export class GameScene extends Phaser.Scene {
   private scarecrowVisual: Phaser.GameObjects.Container | null = null;
 
   // Автоматизация: Орошение (Спринклеры)
-  private sprinklerLevel = 0; // 0..4
-  private sprinklerCosts = [80, 150, 240, 350];
+  private sprinklerLevel = 0; // 0..6
+  private sprinklerCosts = [80, 150, 240, 350, 480, 650];
   private sprinklerTimer = 0;
   private sprinklerVisuals: Phaser.GameObjects.Container[] = [];
 
@@ -163,6 +183,21 @@ export class GameScene extends Phaser.Scene {
   private shopX = 875;
   private shopY = 460;
 
+  // Фаза 2: Новые земли (Восточный участок)
+  private phase2Countdown = 45; // 45 секунд до перевода камеры
+  private phase2CinematicDone = false;
+  private phase2Unlocked = false;
+  private isCinematicActive = false;
+  private cinematicContainer: Phaser.GameObjects.Container | null = null;
+  private phase2GateX = 960;
+  private phase2GateY = 340;
+  private phase2GateDoor: Phaser.GameObjects.Rectangle | null = null;
+  private phase2GateSignContainer: Phaser.GameObjects.Container | null = null;
+  private phase2GateSignText: Phaser.GameObjects.Text | null = null;
+  private phase2WellX = 1810;
+  private phase2WellY = 260;
+  private phase2WellRadius = 45;
+
   // Зоны фермы и грядки
   private zones: FarmZone[] = [];
   private plots: Plot[] = [];
@@ -173,6 +208,8 @@ export class GameScene extends Phaser.Scene {
     wheat: 26,
     strawberry: 65,
     pumpkin: 160,
+    corn: 240,
+    watermelon: 450,
   };
   private hotCrop: CropType | null = null;
   private marketTimer = MARKET_REFRESH_INTERVAL;
@@ -216,6 +253,14 @@ export class GameScene extends Phaser.Scene {
   private crowSliderPos = 0;
   private crowSliderSpeed = 4.0;
 
+  // Мини-игра отбивания крыс (Фаза 2)
+  private ratMinigameModal!: Phaser.GameObjects.Container;
+  private isRatMinigameActive = false;
+  private ratTargetPlot: Plot | null = null;
+  private ratSliderContainer!: Phaser.GameObjects.Container;
+  private ratSliderPos = 0;
+  private ratSliderSpeed = 4.6;
+
   // Звук и Музыка (Minecraft-стиль эмбиент)
   private audioCtx: AudioContext | null = null;
   private isMuted = false;
@@ -238,13 +283,23 @@ export class GameScene extends Phaser.Scene {
     const { width, height } = this.scale;
     this.resetState();
 
-    this.createNaturalLandscape(width, height);
+    // Границы мира на два земельных участка (Фаза 1: 0..960, Фаза 2: 960..1920)
+    const worldWidth = 1920;
+    this.cameras.main.setBounds(0, 0, worldWidth, height);
+
+    this.createNaturalLandscape(worldWidth, height);
     this.createWell();
     this.createPond();
     this.createBarnAndMarketBoard();
     this.createWorkshopShop();
+    this.createPhase2Landscape();
+    this.createPhase2Gate();
     this.createFarmZones();
     this.createPlayer();
+
+    // Камера плавно центрируется на фермере
+    this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
+
     this.createHUD(width);
     this.createControls();
 
@@ -253,6 +308,7 @@ export class GameScene extends Phaser.Scene {
     this.createShopModal(width, height);
     this.createFishingMinigameModal(width, height);
     this.createCrowMinigameModal(width, height);
+    this.createRatMinigameModal(width, height);
     this.createPauseModal(width, height);
 
     this.refreshMarketPrices(true);
@@ -260,7 +316,7 @@ export class GameScene extends Phaser.Scene {
     // Клик мышью
     this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
       this.initAudio();
-      if (this.isPaused || this.isShopOpen || this.isMarketOpen || this.isFishingActive || this.isCrowMinigameActive) return;
+      if (this.isPaused || this.isShopOpen || this.isMarketOpen || this.isFishingActive || this.isCrowMinigameActive || this.isRatMinigameActive || this.isCinematicActive) return;
       this.handlePointerClick(pointer);
     });
   }
@@ -272,7 +328,7 @@ export class GameScene extends Phaser.Scene {
     this.water = this.getMaxWater();
     this.speedLevel = 1;
     this.hasScarecrow = false;
-    this.inventory = { carrot: 0, wheat: 0, strawberry: 0, pumpkin: 0 };
+    this.inventory = { carrot: 0, wheat: 0, strawberry: 0, pumpkin: 0, corn: 0, watermelon: 0 };
     this.targetMovePoint = null;
     this.pendingTargetObject = null;
     this.plots = [];
@@ -281,8 +337,18 @@ export class GameScene extends Phaser.Scene {
     this.isMarketOpen = false;
     this.isFishingActive = false;
     this.isCrowMinigameActive = false;
+    this.isRatMinigameActive = false;
+    this.ratTargetPlot = null;
     this.isGoldenFishActive = false;
     this.fishTimer = 40;
+    this.phase2Countdown = 45;
+    this.phase2CinematicDone = false;
+    this.phase2Unlocked = false;
+    this.isCinematicActive = false;
+    if (this.cinematicContainer) {
+      this.cinematicContainer.destroy();
+      this.cinematicContainer = null;
+    }
     this.sprinklerLevel = 0;
     this.sprinklerTimer = 0;
     this.sprinklerVisuals.forEach((v) => v.destroy());
@@ -445,17 +511,19 @@ export class GameScene extends Phaser.Scene {
       align: 'center',
     }).setOrigin(0.5).setDepth(5);
 
-    // БОЛЬШАЯ, ЧЁТКАЯ ДОСКА ЦЕН НАД/ПОД СКЛАДОМ
+    // БОЛЬШАЯ, ЧЁТКАЯ ДОСКА ЦЕН НАД/ПОД СКЛАДОМ (6 КУЛЬТУР)
     this.marketBoardContainer = this.add.container(this.barnX, this.barnY + 44).setDepth(6);
-    const boardBg = this.add.rectangle(0, 0, 118, 62, 0x0f172a, 0.95);
+    const boardBg = this.add.rectangle(0, 0, 154, 68, 0x0f172a, 0.95);
     boardBg.setStrokeStyle(2, 0xfacc15);
 
-    const keys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin'];
+    const keys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
     const coords = [
-      { x: -52, y: -16 },
-      { x: 8, y: -16 },
-      { x: -52, y: 6 },
-      { x: 8, y: 6 },
+      { x: -52, y: -20 },
+      { x: -4, y: -20 },
+      { x: 44, y: -20 },
+      { x: -52, y: 2 },
+      { x: -4, y: 2 },
+      { x: 44, y: 2 },
     ];
 
     keys.forEach((k, idx) => {
@@ -463,7 +531,7 @@ export class GameScene extends Phaser.Scene {
       const crop = CROPS[k];
       const t = this.add.text(pos.x, pos.y, `${crop.icon} 10🪙`, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '11px',
+        fontSize: '10px',
         color: '#ffffff',
         fontStyle: 'bold',
       });
@@ -471,7 +539,7 @@ export class GameScene extends Phaser.Scene {
       this.marketBoardContainer.add(t);
     });
 
-    this.marketBoardTimerText = this.add.text(0, 22, 'Смена: 25с', {
+    this.marketBoardTimerText = this.add.text(0, 24, 'Смена: 25с', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '9px',
       color: '#94a3b8',
@@ -497,6 +565,111 @@ export class GameScene extends Phaser.Scene {
       fontStyle: 'bold',
       align: 'center',
     }).setOrigin(0.5).setDepth(5);
+  }
+
+  // --- ДЕКОРАЦИИ И ОБЪЕКТЫ ФАЗЫ 2 (ВОСТОЧНЫЙ УЧАСТОК) ---
+
+  private createPhase2Landscape(): void {
+    // Центральное пахотное поле Фазы 2
+    const gardenP2 = this.add.rectangle(1440, 340, 680, 480, 0x223c1f, 0.95);
+    gardenP2.setStrokeStyle(3, 0x3d6634);
+    gardenP2.setDepth(1);
+
+    // Дорожка от ворот в центр восточных земель
+    this.add.rectangle(1200, 340, 480, 36, 0x5a4832, 0.6).setDepth(1);
+
+    // Дополнительный источник воды в Фазе 2 (Бочка с дождевой водой)
+    const barrelShadow = this.add.ellipse(this.phase2WellX, this.phase2WellY + 28, 55, 16, 0x000000, 0.35).setDepth(2);
+    const barrel = this.add.rectangle(this.phase2WellX, this.phase2WellY, 68, 62, 0x78350f);
+    barrel.setStrokeStyle(3, 0x451a03);
+    barrel.setDepth(3);
+
+    const barrelWater = this.add.circle(this.phase2WellX, this.phase2WellY, 20, 0x0284c7).setDepth(4);
+    const barrelRim = this.add.circle(this.phase2WellX, this.phase2WellY, 22);
+    barrelRim.setStrokeStyle(2, 0x94a3b8).setDepth(4);
+
+    this.add.text(this.phase2WellX, this.phase2WellY + 42, '🪣 БОЧКА С ВОДОЙ\n[ПРОБЕЛ / Клик]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#7dd3fc',
+      align: 'center',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(5);
+
+    // Мельница декоративная на востоке
+    const mill = this.add.rectangle(1820, 470, 70, 90, 0x475569).setDepth(3);
+    mill.setStrokeStyle(3, 0x1e293b);
+    const millRoof = this.add.triangle(1820, 400, 1780, 430, 1860, 430, 1820, 385, 0x854d0e).setDepth(4);
+    this.add.text(1820, 470, '💨 МЕЛЬНИЦА\nФАЗЫ 2', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#cbd5e1',
+      align: 'center',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(5);
+
+    // Норы полевых крыс (угроза урожаю)
+    const ratBurrow1 = this.add.ellipse(1080, 520, 46, 24, 0x18181b).setDepth(2);
+    ratBurrow1.setStrokeStyle(2, 0x78350f);
+    this.add.text(1080, 520, '🕳️🐀 Нора крыс', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#ea580c',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(3);
+
+    const ratBurrow2 = this.add.ellipse(1720, 520, 46, 24, 0x18181b).setDepth(2);
+    ratBurrow2.setStrokeStyle(2, 0x78350f);
+    this.add.text(1720, 520, '🕳️🐀 Нора крыс', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#ea580c',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(3);
+
+    // Деревья и декорации в Фазе 2
+    this.createTree(1050, 140);
+    this.createTree(1740, 130);
+    this.createTree(1860, 560);
+  }
+
+  private createPhase2Gate(): void {
+    // Ограждения границы на x = 960 (сверху и снизу от ворот)
+    this.add.rectangle(this.phase2GateX, 191, 14, 198, 0x643c1f).setDepth(4);
+    this.add.rectangle(this.phase2GateX, 505, 14, 230, 0x643c1f).setDepth(4);
+
+    // Арка прохода
+    this.add.rectangle(this.phase2GateX, 300, 18, 20, 0x78350f).setDepth(5);
+    this.add.rectangle(this.phase2GateX, 380, 18, 20, 0x78350f).setDepth(5);
+    const archTop = this.add.rectangle(this.phase2GateX, 290, 50, 14, 0x92400e).setDepth(6);
+    this.add.text(this.phase2GateX, 272, '🚪 ВОСТОЧНЫЕ УГОДЬЯ', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#fef08a',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setDepth(7);
+
+    // Дверь ворот (заперта до покупки)
+    this.phase2GateDoor = this.add.rectangle(this.phase2GateX, this.phase2GateY, 14, 70, 0x78350f).setDepth(5);
+    this.phase2GateDoor.setStrokeStyle(2, 0xf59e0b);
+
+    // Табличка ворот
+    this.phase2GateSignContainer = this.add.container(this.phase2GateX, this.phase2GateY).setDepth(15);
+    const signBg = this.add.rectangle(0, 0, 140, 52, 0x0f172a, 0.94);
+    signBg.setStrokeStyle(2, 0xfacc15);
+
+    this.phase2GateSignText = this.add.text(0, 0, '🔒 ВОСТОЧНЫЕ ЗЕМЛИ\n(Фаза 2: 45с)', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#fef08a',
+      fontStyle: 'bold',
+      align: 'center',
+    }).setOrigin(0.5);
+
+    this.phase2GateSignContainer.add([signBg, this.phase2GateSignText]);
+    this.phase2GateSignContainer.setSize(140, 52);
+    this.phase2GateSignContainer.setInteractive({ useHandCursor: true });
+    this.phase2GateSignContainer.on('pointerdown', () => this.tryUnlockPhase2());
   }
 
   private createFarmZones(): void {
@@ -541,6 +714,26 @@ export class GameScene extends Phaser.Scene {
         signY: 555,
         fences: [],
       },
+      {
+        id: 5,
+        name: 'Кукурузное поле',
+        cropType: 'corn',
+        cost: 1,
+        unlocked: false,
+        signX: 1120,
+        signY: 230,
+        fences: [],
+      },
+      {
+        id: 6,
+        name: 'Бахча арбузов',
+        cropType: 'watermelon',
+        cost: 1,
+        unlocked: false,
+        signX: 1120,
+        signY: 450,
+        fences: [],
+      },
     ];
 
     const plotConfigs: Array<{ zoneId: number; cropType: CropType; x: number; y: number; w: number; h: number }> = [
@@ -559,6 +752,14 @@ export class GameScene extends Phaser.Scene {
       // Зона 4: Тыква
       { zoneId: 4, cropType: 'pumpkin', x: 390, y: 555, w: 155, h: 90 },
       { zoneId: 4, cropType: 'pumpkin', x: 580, y: 555, w: 155, h: 90 },
+      // Зона 5: Кукуруза (Фаза 2)
+      { zoneId: 5, cropType: 'corn', x: 1260, y: 230, w: 135, h: 90 },
+      { zoneId: 5, cropType: 'corn', x: 1440, y: 230, w: 135, h: 90 },
+      { zoneId: 5, cropType: 'corn', x: 1620, y: 230, w: 135, h: 90 },
+      // Зона 6: Арбузы (Фаза 2)
+      { zoneId: 6, cropType: 'watermelon', x: 1260, y: 450, w: 135, h: 90 },
+      { zoneId: 6, cropType: 'watermelon', x: 1440, y: 450, w: 135, h: 90 },
+      { zoneId: 6, cropType: 'watermelon', x: 1620, y: 450, w: 135, h: 90 },
     ];
 
     let plotId = 0;
@@ -739,33 +940,33 @@ export class GameScene extends Phaser.Scene {
   private createHUD(width: number): void {
     const hudBg = this.add.rectangle(width / 2, 44, width - 24, 76, 0x0f172a, 0.95);
     hudBg.setStrokeStyle(2, 0x334155);
-    hudBg.setDepth(35);
+    hudBg.setDepth(35).setScrollFactor(0);
 
     this.coinsText = this.add.text(28, 22, `🪙 Монеты: ${this.coins}`, {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '18px',
       color: '#facc15',
       fontStyle: 'bold',
-    }).setDepth(36);
+    }).setDepth(36).setScrollFactor(0);
 
     this.waterText = this.add.text(28, 48, `💧 Лейка: ${this.water}/${this.getMaxWater()}`, {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '15px',
       color: '#38bdf8',
-    }).setDepth(36);
+    }).setDepth(36).setScrollFactor(0);
 
-    this.marketTrendHudText = this.add.text(210, 22, '📈 Рынок: загрузка цен...', {
+    this.marketTrendHudText = this.add.text(190, 22, '📈 Рынок: загрузка цен...', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '14px',
+      fontSize: '13px',
       color: '#4ade80',
       fontStyle: 'bold',
-    }).setDepth(36);
+    }).setDepth(36).setScrollFactor(0);
 
-    this.inventoryText = this.add.text(210, 48, '🧺 Корзина: 🥕:0  🌾:0  🍓:0  🎃:0', {
+    this.inventoryText = this.add.text(190, 48, '🧺 Корзина: 🥕:0 🌾:0 🍓:0 🎃:0 🌽:0 🍉:0', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '14px',
+      fontSize: '12px',
       color: '#e2e8f0',
-    }).setDepth(36);
+    }).setDepth(36).setScrollFactor(0);
 
     // Кнопка паузы
     this.pauseButtonText = this.add.text(width - 440, 34, '⏸️ Пауза [P]', {
@@ -774,7 +975,7 @@ export class GameScene extends Phaser.Scene {
       color: '#facc15',
       backgroundColor: '#1e293b',
       padding: { x: 8, y: 5 },
-    }).setDepth(36).setInteractive({ useHandCursor: true });
+    }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
 
     this.pauseButtonText.on('pointerdown', () => this.togglePause());
 
@@ -785,7 +986,7 @@ export class GameScene extends Phaser.Scene {
       color: '#a7f3d0',
       backgroundColor: '#1e293b',
       padding: { x: 8, y: 5 },
-    }).setDepth(36).setInteractive({ useHandCursor: true });
+    }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
 
     this.musicButtonText.on('pointerdown', () => {
       this.initAudio();
@@ -800,7 +1001,7 @@ export class GameScene extends Phaser.Scene {
       color: '#94a3b8',
       backgroundColor: '#1e293b',
       padding: { x: 8, y: 5 },
-    }).setDepth(36).setInteractive({ useHandCursor: true });
+    }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
 
     this.soundButtonText.on('pointerdown', () => {
       this.initAudio();
@@ -815,16 +1016,16 @@ export class GameScene extends Phaser.Scene {
       color: '#38bdf8',
       backgroundColor: '#1e293b',
       padding: { x: 8, y: 5 },
-    }).setDepth(36).setInteractive({ useHandCursor: true });
+    }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
     shopBtn.on('pointerdown', () => this.openShopModal());
 
-    this.add.text(width / 2, this.scale.height - 18, 'WASD / Клик — Идти  |  ПРОБЕЛ — Действие  |  P / Кнопка — Пауза  |  Склад: Рынок  |  Пруд: Рыбалка', {
+    this.add.text(width / 2, this.scale.height - 18, 'WASD / Клик — Идти  |  ПРОБЕЛ — Действие  |  P — Пауза  |  Фаза 2: Ворота справа (1 🪙)', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#94a3b8',
       backgroundColor: '#0f172acc',
       padding: { x: 10, y: 3 },
-    }).setOrigin(0.5).setDepth(35);
+    }).setOrigin(0.5).setDepth(35).setScrollFactor(0);
   }
 
   private createControls(): void {
@@ -863,28 +1064,28 @@ export class GameScene extends Phaser.Scene {
   // --- МОДАЛЬНОЕ ОКНО РЫНКА (ЧЁТКИЙ СПИСОК ЦЕН И ПРОДАЖА) ---
 
   private createMarketModal(width: number, height: number): void {
-    this.marketModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false);
+    this.marketModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false).setScrollFactor(0);
 
     const backdrop = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setInteractive();
-    const panel = this.add.rectangle(0, 0, 500, 360, 0x0f172a);
+    const panel = this.add.rectangle(0, 0, 500, 440, 0x0f172a);
     panel.setStrokeStyle(3, 0xfacc15);
 
-    const title = this.add.text(0, -145, '🏪 РЫНОЧНАЯ БИРЖА СКЛАДА', {
+    const title = this.add.text(0, -185, '🏪 РЫНОЧНАЯ БИРЖА СКЛАДА', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '20px',
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const desc = this.add.text(0, -118, 'Котировки цен меняются каждые 25 сек. Продавайте на пике спроса!', {
+    const desc = this.add.text(0, -158, 'Котировки цен меняются каждые 25 сек. Продавайте на пике спроса!', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#94a3b8',
     }).setOrigin(0.5);
 
-    const listContainer = this.add.container(0, -90).setName('marketList');
+    const listContainer = this.add.container(0, -125).setName('marketList');
 
-    const sellAllBtn = this.add.text(0, 95, 'ПРОДАТЬ ВСЁ (0 🪙)', {
+    const sellAllBtn = this.add.text(0, 140, 'ПРОДАТЬ ВСЁ (0 🪙)', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '17px',
       color: '#ffffff',
@@ -898,7 +1099,7 @@ export class GameScene extends Phaser.Scene {
       this.closeMarketModal();
     });
 
-    const closeBtn = this.add.text(0, 145, 'ЗАКРЫТЬ [ESC]', {
+    const closeBtn = this.add.text(0, 190, 'ЗАКРЫТЬ [ESC]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '14px',
       color: '#94a3b8',
@@ -929,7 +1130,7 @@ export class GameScene extends Phaser.Scene {
     const list = this.marketModal.getByName('marketList') as Phaser.GameObjects.Container;
     list.removeAll(true);
 
-    const crops: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin'];
+    const crops: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
     let totalValue = 0;
 
     crops.forEach((key, idx) => {
@@ -940,21 +1141,21 @@ export class GameScene extends Phaser.Scene {
       totalValue += sum;
 
       const isHot = key === this.hotCrop;
-      const y = idx * 42;
+      const y = idx * 40;
 
-      const rowBg = this.add.rectangle(0, y, 440, 36, isHot ? 0x451a03 : 0x1e293b);
+      const rowBg = this.add.rectangle(0, y, 450, 34, isHot ? 0x451a03 : 0x1e293b);
       rowBg.setStrokeStyle(1, isHot ? 0xf59e0b : 0x334155);
 
-      const label = this.add.text(-205, y, `${info.icon} ${info.name}: ${price} 🪙/шт ${isHot ? '🔥 БУМ СПРОСА!' : ''}`, {
+      const label = this.add.text(-210, y, `${info.icon} ${info.name}: ${price} 🪙/шт ${isHot ? '🔥 БУМ СПРОСА!' : ''}`, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
+        fontSize: '12px',
         color: isHot ? '#fef08a' : '#f8fafc',
         fontStyle: isHot ? 'bold' : 'normal',
       }).setOrigin(0, 0.5);
 
-      const rightInfo = this.add.text(205, y, `В корзине: ${count} шт = ${sum} 🪙`, {
+      const rightInfo = this.add.text(210, y, `В корзине: ${count} шт = ${sum} 🪙`, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '13px',
+        fontSize: '12px',
         color: sum > 0 ? '#4ade80' : '#94a3b8',
         fontStyle: 'bold',
       }).setOrigin(1, 0.5);
@@ -967,10 +1168,10 @@ export class GameScene extends Phaser.Scene {
     sellBtn.setBackgroundColor(totalValue > 0 ? '#16a34a' : '#334155');
   }
 
-  // --- МИНИ-ИГРА "ОТБИВАНИЕ ВОРОН" ---
+  // --- МИНИ-ИГРА "ОТБИВАНИЕ ВОРОН" (ФАЗА 1) ---
 
   private createCrowMinigameModal(width: number, height: number): void {
-    this.crowMinigameModal = this.add.container(width / 2, height / 2).setDepth(120).setVisible(false);
+    this.crowMinigameModal = this.add.container(width / 2, height / 2).setDepth(120).setVisible(false).setScrollFactor(0);
 
     const bg = this.add.rectangle(0, 0, 420, 240, 0x0f172a, 0.95);
     bg.setStrokeStyle(3, 0xef4444);
@@ -1048,10 +1249,94 @@ export class GameScene extends Phaser.Scene {
     this.crowTargetPlot = null;
   }
 
+  // --- МИНИ-ИГРА "ОТБИВАНИЕ КРЫС" (ФАЗА 2) ---
+
+  private createRatMinigameModal(width: number, height: number): void {
+    this.ratMinigameModal = this.add.container(width / 2, height / 2).setDepth(120).setVisible(false).setScrollFactor(0);
+
+    const bg = this.add.rectangle(0, 0, 440, 250, 0x0f172a, 0.95);
+    bg.setStrokeStyle(3, 0xf97316);
+
+    const title = this.add.text(0, -90, '🐀 НАПАДЕНИЕ ПОЛЕВОЙ КРЫСЫ! 🐀', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '19px',
+      color: '#f97316',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const instr = this.add.text(0, -58, 'Крыса грызёт урожай на новом участке! Поймайте бегунок в ЗЕЛЕНУЮ ЗОНУ,\nчтобы спугнуть её и отобрать украденные монеты!', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#cbd5e1',
+      align: 'center',
+    }).setOrigin(0.5);
+
+    // Шкала
+    const track = this.add.rectangle(0, 8, 320, 24, 0x1e293b);
+    track.setStrokeStyle(2, 0x475569);
+
+    // Зеленая зона успеха
+    const greenZone = this.add.rectangle(0, 8, 70, 24, 0x22c55e);
+
+    // Бегунок крысы
+    this.ratSliderContainer = this.add.container(0, 8);
+    const ratSliderIcon = this.add.text(0, 0, '🐀💨', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '22px',
+    }).setOrigin(0.5);
+    this.ratSliderContainer.add(ratSliderIcon);
+
+    const hitBtn = this.add.text(0, 68, '🪤 СХВАТИТЬ КРЫСУ! [ПРОБЕЛ]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '16px',
+      color: '#ffffff',
+      backgroundColor: '#ea580c',
+      padding: { x: 22, y: 8 },
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    hitBtn.on('pointerdown', () => this.resolveRatHit());
+
+    this.ratMinigameModal.add([bg, title, instr, track, greenZone, this.ratSliderContainer, hitBtn]);
+  }
+
+  private startRatMinigame(plot: Plot): void {
+    this.isRatMinigameActive = true;
+    this.ratTargetPlot = plot;
+    this.ratSliderPos = -140;
+    this.ratMinigameModal.setVisible(true);
+  }
+
+  private resolveRatHit(): void {
+    if (!this.isRatMinigameActive || !this.ratTargetPlot) return;
+
+    const success = Math.abs(this.ratSliderPos) <= 38;
+    this.isRatMinigameActive = false;
+    this.ratMinigameModal.setVisible(false);
+
+    if (success) {
+      const bonusCoins = Phaser.Math.Between(35, 65);
+      this.coins += bonusCoins;
+      this.updateCoinsHud();
+
+      this.ratTargetPlot.state = 'ready';
+      this.ratTargetPlot.pestTimer = 0;
+      this.updatePlotVisuals(this.ratTargetPlot);
+
+      this.playScaredRat();
+      this.showFloatingNotice(this.ratTargetPlot.x, this.ratTargetPlot.y - 35, `🐀 КРЫСА С ПИСКОМ СБЕЖАЛА!\n+${bonusCoins} 🪙 добычи!`, '#facc15');
+    } else {
+      this.playErrorSound();
+      this.showFloatingNotice(this.ratTargetPlot.x, this.ratTargetPlot.y - 35, 'Мимо! Крыса увернулась и грызёт дальше!', '#ef4444');
+      this.ratTargetPlot.pestTimer -= 1.8;
+    }
+    this.ratTargetPlot = null;
+  }
+
   // --- МИНИ-ИГРА "ЗОЛОТАЯ РЫБАЛКА" (РЕДКАЯ ВЫСОКАЯ ПРИБЫЛЬ) ---
 
   private createFishingMinigameModal(width: number, height: number): void {
-    this.fishingModal = this.add.container(width / 2, height / 2).setDepth(120).setVisible(false);
+    this.fishingModal = this.add.container(width / 2, height / 2).setDepth(120).setVisible(false).setScrollFactor(0);
 
     const bg = this.add.rectangle(0, 0, 440, 260, 0x0f172a, 0.95);
     bg.setStrokeStyle(3, 0x38bdf8);
@@ -1128,7 +1413,7 @@ export class GameScene extends Phaser.Scene {
   // --- ЛАВКА УЛУЧШЕНИЙ ---
 
   private createShopModal(width: number, height: number): void {
-    this.shopModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false);
+    this.shopModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false).setScrollFactor(0);
 
     const backdrop = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setInteractive();
     const panel = this.add.rectangle(0, 0, 520, 480, 0x0f172a);
@@ -1340,6 +1625,8 @@ export class GameScene extends Phaser.Scene {
       { x: 490, y: 255 }, // Zone 2 (Пшеница)
       { x: 490, y: 385 }, // Zone 3 (Клубника)
       { x: 485, y: 505 }, // Zone 4 (Тыква)
+      { x: 1440, y: 175 }, // Zone 5 (Кукуруза - Фаза 2)
+      { x: 1440, y: 395 }, // Zone 6 (Арбуз - Фаза 2)
     ];
 
     const pos = coords[level - 1];
@@ -1573,7 +1860,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createPauseModal(width: number, height: number): void {
-    this.pauseModal = this.add.container(width / 2, height / 2).setDepth(150).setVisible(false);
+    this.pauseModal = this.add.container(width / 2, height / 2).setDepth(150).setVisible(false).setScrollFactor(0);
 
     // Полупрозрачный фон, блокирующий клики
     const backdrop = this.add.rectangle(0, 0, width, height, 0x000000, 0.75).setInteractive();
@@ -1588,7 +1875,7 @@ export class GameScene extends Phaser.Scene {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const subtitle = this.add.text(0, -95, 'Все таймеры, грядки, вороны и рыбалка застыли', {
+    const subtitle = this.add.text(0, -95, 'Все таймеры, грядки, вредители и рыбалка застыли', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#94a3b8',
@@ -1628,17 +1915,16 @@ export class GameScene extends Phaser.Scene {
       .filter((z) => z.unlocked)
       .map((z) => CROPS[z.cropType].name)
       .join(', ');
-    const countHarvest =
-      this.inventory.carrot +
-      this.inventory.wheat +
-      this.inventory.strawberry +
-      this.inventory.pumpkin;
+    const countHarvest = Object.values(this.inventory).reduce((a, b) => a + b, 0);
+    const harvestDetails = (Object.keys(CROPS) as CropType[])
+      .map((k) => `${CROPS[k].icon}:${this.inventory[k]}`)
+      .join('  ');
 
     stats.setText(
       `🪙 Золото в казне: ${this.coins} монет\n` +
-      `🧺 Урожай в корзине (${countHarvest} шт.): 🥕:${this.inventory.carrot}  🌾:${this.inventory.wheat}  🍓:${this.inventory.strawberry}  🎃:${this.inventory.pumpkin}\n` +
-      `💧 Лейка: ${this.water}/${this.getMaxWater()} | Скорость фермера: Ур. ${this.speedLevel}\n` +
-      `🌾 Пугало: ${this.hasScarecrow ? 'Установлено (защита активна)' : 'Не куплено'}\n` +
+      `🧺 Урожай в корзине (${countHarvest} шт.): ${harvestDetails}\n` +
+      `💧 Лейка: ${this.water}/${this.getMaxWater()} | Скорость: Ур. ${this.speedLevel}\n` +
+      `🌾 Пугало: ${this.hasScarecrow ? 'Установлено' : 'Не куплено'} | 🗺️ Фаза 2: ${this.phase2Unlocked ? 'Открыта' : 'Закрыта'}\n` +
       `🗺️ Открытые территории: ${unlockedZones}`
     );
   }
@@ -1661,9 +1947,20 @@ export class GameScene extends Phaser.Scene {
         this.crowSliderSpeed = -this.crowSliderSpeed;
       }
       this.crowSlider.x = this.crowSliderPos;
-      // Обработка клавиши пробел в миниигре
       if (this.actionKeys.some((k) => Phaser.Input.Keyboard.JustDown(k))) {
         this.resolveCrowHit();
+      }
+      return;
+    }
+
+    if (this.isRatMinigameActive) {
+      this.ratSliderPos += this.ratSliderSpeed * seconds * 60;
+      if (this.ratSliderPos > 140 || this.ratSliderPos < -140) {
+        this.ratSliderSpeed = -this.ratSliderSpeed;
+      }
+      this.ratSliderContainer.x = this.ratSliderPos;
+      if (this.actionKeys.some((k) => Phaser.Input.Keyboard.JustDown(k))) {
+        this.resolveRatHit();
       }
       return;
     }
@@ -1680,7 +1977,30 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Кинематографический пролёт камеры (Фаза 2)
+    if (this.isCinematicActive) {
+      if (this.actionKeys.some((k) => Phaser.Input.Keyboard.JustDown(k))) {
+        this.cameras.main.pan(this.playerContainer.x, this.playerContainer.y, 400, 'Power1', false, (_c, p) => {
+          if (p >= 1) this.endPhase2Cinematic();
+        });
+      }
+      return;
+    }
+
     if (this.isShopOpen || this.isMarketOpen) return;
+
+    // Таймер запуска Фазы 2 (по прошествии 45 секунд)
+    if (!this.phase2CinematicDone) {
+      this.phase2Countdown -= seconds;
+      if (this.phase2GateSignText && !this.phase2Unlocked) {
+        this.phase2GateSignText.setText(`🔒 ВОСТОЧНЫЕ ЗЕМЛИ\n(Фаза 2: ${Math.max(0, Math.ceil(this.phase2Countdown))}с)`);
+      }
+      if (this.phase2Countdown <= 0) {
+        this.phase2Countdown = 0;
+        this.phase2CinematicDone = true;
+        this.startPhase2Cinematic();
+      }
+    }
 
     this.updatePlayerMovement(seconds);
     this.updatePlotsGrowth(seconds);
@@ -1745,7 +2065,9 @@ export class GameScene extends Phaser.Scene {
       this.playerContainer.rotation = 0;
     }
 
-    this.playerContainer.x = Phaser.Math.Clamp(this.playerContainer.x, 40, this.scale.width - 40);
+    // Ограничение перемещения (до открытия ворот Фазы 2 фермер не может пройти на восток)
+    const maxX = this.phase2Unlocked ? 1920 - 40 : this.phase2GateX - 25;
+    this.playerContainer.x = Phaser.Math.Clamp(this.playerContainer.x, 40, maxX);
     this.playerContainer.y = Phaser.Math.Clamp(this.playerContainer.y, 120, this.scale.height - 40);
 
     this.promptBox.setPosition(this.playerContainer.x, this.playerContainer.y - 54);
@@ -1758,6 +2080,12 @@ export class GameScene extends Phaser.Scene {
 
     if (this.pendingTargetObject.type === 'well') {
       return Phaser.Math.Distance.Between(px, py, this.wellX, this.wellY) <= this.wellRadius + 20;
+    }
+    if (this.pendingTargetObject.type === 'phase2Well') {
+      return Phaser.Math.Distance.Between(px, py, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 20;
+    }
+    if (this.pendingTargetObject.type === 'phase2Gate') {
+      return Phaser.Math.Distance.Between(px, py, this.phase2GateX, this.phase2GateY) <= INTERACT_RADIUS + 20;
     }
     if (this.pendingTargetObject.type === 'pond') {
       return Phaser.Math.Distance.Between(px, py, this.pondX, this.pondY) <= 70;
@@ -1781,8 +2109,10 @@ export class GameScene extends Phaser.Scene {
 
   private executePendingAction(): void {
     if (!this.pendingTargetObject) return;
-    if (this.pendingTargetObject.type === 'well') {
+    if (this.pendingTargetObject.type === 'well' || this.pendingTargetObject.type === 'phase2Well') {
       this.fillWater();
+    } else if (this.pendingTargetObject.type === 'phase2Gate') {
+      this.tryUnlockPhase2();
     } else if (this.pendingTargetObject.type === 'pond') {
       this.startFishing();
     } else if (this.pendingTargetObject.type === 'barn') {
@@ -1845,9 +2175,23 @@ export class GameScene extends Phaser.Scene {
           victim.maxPestTimer = 8.0;
           victim.pestTimer = victim.maxPestTimer;
           victim.soil.setFillStyle(0x7f1d1d);
+
+          const isRat = victim.zoneId === 5 || victim.zoneId === 6;
+          victim.pestText.setText(isRat ? '🐀' : '🦅');
+          const badge = victim.pestContainer.getAt(1) as Phaser.GameObjects.Text;
+          if (badge) {
+            badge.setText(isRat ? '⚠️ КРЫСА!' : '⚠️ КЛЮЁТ!');
+            badge.setBackgroundColor(isRat ? '#ea580c' : '#ef4444');
+          }
+
           this.updatePlotVisuals(victim);
-          this.playPestAlert();
-          this.showFloatingNotice(victim.x, victim.y - 30, '⚠️ ВОРОНА КЛЮЁТ!', '#ef4444');
+          if (isRat) {
+            this.playRatAlert();
+            this.showFloatingNotice(victim.x, victim.y - 30, '🐀 КРЫСА ГРЫЗЁТ УРОЖАЙ!', '#ea580c');
+          } else {
+            this.playPestAlert();
+            this.showFloatingNotice(victim.x, victim.y - 30, '⚠️ ВОРОНА КЛЮЁТ!', '#ef4444');
+          }
         }
       }
     }
@@ -1864,14 +2208,15 @@ export class GameScene extends Phaser.Scene {
       plot.barFill.width = 90 * ratio;
       plot.barFill.setFillStyle(0xef4444);
 
-      plot.statusText.setText(`⚠️ Клюёт: ${plot.pestTimer.toFixed(1)}с`);
+      const isRat = plot.zoneId === 5 || plot.zoneId === 6;
+      plot.statusText.setText(isRat ? `🐀 Грызёт: ${plot.pestTimer.toFixed(1)}с` : `⚠️ Клюёт: ${plot.pestTimer.toFixed(1)}с`);
 
       if (plot.pestTimer <= 0) {
         plot.state = 'withered';
         plot.soil.setFillStyle(0x27272a);
         this.updatePlotVisuals(plot);
         this.playCropLost();
-        this.showFloatingNotice(plot.x, plot.y - 30, '🥀 Ворона склевала урожай!', '#f87171');
+        this.showFloatingNotice(plot.x, plot.y - 30, isRat ? '🥀 Крыса сгрызла урожай!' : '🥀 Ворона склевала урожай!', '#f87171');
       }
     }
   }
@@ -1940,7 +2285,8 @@ export class GameScene extends Phaser.Scene {
         plot.soil.setFillStyle(0x27272a);
         plot.plantIcon.setText('🥀');
         plot.pestContainer.setVisible(false);
-        plot.statusText.setText('Склёвано (расчистить)');
+        const isRatPlot = plot.zoneId === 5 || plot.zoneId === 6;
+        plot.statusText.setText(isRatPlot ? 'Сгрызено (расчистить)' : 'Склёвано (расчистить)');
         plot.statusText.setColor('#94a3b8');
         plot.barBg.setVisible(false);
         plot.barFill.setVisible(false);
@@ -1961,7 +2307,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshMarketPrices(silent = false): void {
-    const cropKeys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin'];
+    const cropKeys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
     this.hotCrop = Phaser.Utils.Array.GetRandom(cropKeys) as CropType;
 
     for (const key of cropKeys) {
@@ -1995,10 +2341,11 @@ export class GameScene extends Phaser.Scene {
 
   private sellAllHarvest(): void {
     let revenue = 0;
-    revenue += this.inventory.carrot * this.marketPrices.carrot;
-    revenue += this.inventory.wheat * this.marketPrices.wheat;
-    revenue += this.inventory.strawberry * this.marketPrices.strawberry;
-    revenue += this.inventory.pumpkin * this.marketPrices.pumpkin;
+    const cropKeys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
+    for (const k of cropKeys) {
+      revenue += this.inventory[k] * this.marketPrices[k];
+      this.inventory[k] = 0;
+    }
 
     if (revenue === 0) {
       this.playErrorSound();
@@ -2007,8 +2354,6 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.coins += revenue;
-    this.inventory = { carrot: 0, wheat: 0, strawberry: 0, pumpkin: 0 };
-
     this.updateCoinsHud();
     this.updateInventoryHud();
     this.playSaleSound();
@@ -2032,23 +2377,45 @@ export class GameScene extends Phaser.Scene {
   // --- ИНТЕРАКЦИЯ И КЛИКИ ---
 
   private handlePointerClick(pointer: Phaser.Input.Pointer): void {
-    if (this.isPaused) return;
+    if (this.isPaused || this.isCinematicActive) return;
 
-    const clickedX = pointer.x;
-    const clickedY = pointer.y;
+    if (pointer.y <= 85 || pointer.y >= this.scale.height - 35) return;
 
-    if (clickedY <= 85) return;
+    const clickedX = pointer.worldX;
+    const clickedY = pointer.worldY;
 
     const px = this.playerContainer.x;
     const py = this.playerContainer.y;
 
-    // 1. Колодец
+    // 1. Колодец Фазы 1
     if (Phaser.Math.Distance.Between(clickedX, clickedY, this.wellX, this.wellY) <= this.wellRadius + 15) {
       if (Phaser.Math.Distance.Between(px, py, this.wellX, this.wellY) <= this.wellRadius + 20) {
         this.fillWater();
       } else {
         this.targetMovePoint = { x: this.wellX + 45, y: this.wellY };
         this.pendingTargetObject = { type: 'well' };
+      }
+      return;
+    }
+
+    // 1.1 Бочка с водой Фазы 2
+    if (Phaser.Math.Distance.Between(clickedX, clickedY, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 15) {
+      if (Phaser.Math.Distance.Between(px, py, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 20) {
+        this.fillWater();
+      } else {
+        this.targetMovePoint = { x: this.phase2WellX - 45, y: this.phase2WellY };
+        this.pendingTargetObject = { type: 'phase2Well' };
+      }
+      return;
+    }
+
+    // 1.2 Ворота Фазы 2
+    if (Phaser.Math.Distance.Between(clickedX, clickedY, this.phase2GateX, this.phase2GateY) <= 65) {
+      if (Phaser.Math.Distance.Between(px, py, this.phase2GateX, this.phase2GateY) <= INTERACT_RADIUS + 20) {
+        this.tryUnlockPhase2();
+      } else {
+        this.targetMovePoint = { x: this.phase2GateX - 45, y: this.phase2GateY };
+        this.pendingTargetObject = { type: 'phase2Gate' };
       }
       return;
     }
@@ -2114,6 +2481,30 @@ export class GameScene extends Phaser.Scene {
   private detectInteractionTarget(): void {
     const px = this.playerContainer.x;
     const py = this.playerContainer.y;
+
+    // Ворота Фазы 2
+    if (Phaser.Math.Distance.Between(px, py, this.phase2GateX, this.phase2GateY) <= INTERACT_RADIUS + 15) {
+      if (!this.phase2Unlocked) {
+        if (this.phase2CinematicDone) {
+          this.showPrompt('✨ [ПРОБЕЛ / Клик] Открыть Фазу 2 (1 🪙)');
+        } else {
+          this.showPrompt(`🔒 Фаза 2 откроется через ${Math.max(0, Math.ceil(this.phase2Countdown))}с`);
+        }
+      } else {
+        this.showPrompt('🚪 Проход в восточные угодья (Открыто)');
+      }
+      return;
+    }
+
+    // Бочка с водой Фазы 2
+    if (Phaser.Math.Distance.Between(px, py, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 20) {
+      if (this.water < this.getMaxWater()) {
+        this.showPrompt('[ПРОБЕЛ / Клик] Набрать воду из бочки');
+      } else {
+        this.showPrompt(`Лейка полна (${this.water}/${this.getMaxWater()})`);
+      }
+      return;
+    }
 
     // Колодец
     if (Phaser.Math.Distance.Between(px, py, this.wellX, this.wellY) <= this.wellRadius + 20) {
@@ -2209,7 +2600,11 @@ export class GameScene extends Phaser.Scene {
         this.showPrompt(`[ПРОБЕЛ] Собрать: ${info.name} ${info.icon}`);
         break;
       case 'attacked':
-        this.showPrompt('⚠️ [ПРОБЕЛ] МИНИ-ИГРА: СПУГНУТЬ ВОРОНУ!');
+        if (plot.zoneId === 5 || plot.zoneId === 6) {
+          this.showPrompt('🐀 [ПРОБЕЛ] МИНИ-ИГРА: ПРОГНАТЬ КРЫСУ!');
+        } else {
+          this.showPrompt('⚠️ [ПРОБЕЛ] МИНИ-ИГРА: СПУГНУТЬ ВОРОНУ!');
+        }
         break;
       case 'withered':
         this.showPrompt('[ПРОБЕЛ] Расчистить грядку');
@@ -2229,6 +2624,18 @@ export class GameScene extends Phaser.Scene {
     this.initAudio();
     const px = this.playerContainer.x;
     const py = this.playerContainer.y;
+
+    // Ворота Фазы 2
+    if (Phaser.Math.Distance.Between(px, py, this.phase2GateX, this.phase2GateY) <= INTERACT_RADIUS + 20) {
+      this.tryUnlockPhase2();
+      return;
+    }
+
+    // Бочка с водой Фазы 2
+    if (Phaser.Math.Distance.Between(px, py, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 20) {
+      this.fillWater();
+      return;
+    }
 
     if (Phaser.Math.Distance.Between(px, py, this.wellX, this.wellY) <= this.wellRadius + 20) {
       this.fillWater();
@@ -2333,8 +2740,11 @@ export class GameScene extends Phaser.Scene {
         break;
 
       case 'attacked':
-        // Запуск QTE мини-игры отбивания вороны
-        this.startCrowMinigame(plot);
+        if (plot.zoneId === 5 || plot.zoneId === 6) {
+          this.startRatMinigame(plot);
+        } else {
+          this.startCrowMinigame(plot);
+        }
         break;
 
       case 'withered':
@@ -2365,7 +2775,7 @@ export class GameScene extends Phaser.Scene {
 
   private updateInventoryHud(): void {
     this.inventoryText.setText(
-      `🧺 Корзина: 🥕:${this.inventory.carrot}  🌾:${this.inventory.wheat}  🍓:${this.inventory.strawberry}  🎃:${this.inventory.pumpkin}`,
+      `🧺 Корзина: 🥕:${this.inventory.carrot} 🌾:${this.inventory.wheat} 🍓:${this.inventory.strawberry} 🎃:${this.inventory.pumpkin} 🌽:${this.inventory.corn} 🍉:${this.inventory.watermelon}`
     );
   }
 
@@ -2554,5 +2964,137 @@ export class GameScene extends Phaser.Scene {
 
   private playErrorSound(): void {
     this.playTone(150, 'sawtooth', 0.15, 0.08);
+  }
+
+  // --- КИНЕМАТОГРАФИЧЕСКИЙ ПРОЛЁТ И ОТКРЫТИЕ ФАЗЫ 2 ---
+
+  private startPhase2Cinematic(): void {
+    this.isCinematicActive = true;
+    this.targetMovePoint = null;
+    this.pendingTargetObject = null;
+    if (this.phase2GateSignText && !this.phase2Unlocked) {
+      this.phase2GateSignText.setText('✨ ФАЗА 2: ОТКРЫТЬ\n[ПРОБЕЛ] 1 🪙');
+    }
+
+    this.playVictoryFanfare();
+
+    // Создаем красивый кинематографический оверлей (scrollFactor 0)
+    const { width } = this.scale;
+    this.cinematicContainer = this.add.container(width / 2, 75).setDepth(140).setScrollFactor(0);
+
+    const bar = this.add.rectangle(0, 0, width - 40, 56, 0x0f172a, 0.95);
+    bar.setStrokeStyle(3, 0xfacc15);
+
+    const title = this.add.text(0, -12, '🌟 НАСТУПИЛА ФАЗА 2: НОВЫЕ ПЛОДОРОДНЫЕ ЗЕМЛИ! 🌟', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '16px',
+      color: '#facc15',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const sub = this.add.text(0, 12, 'Камера осматривает восточный участок... Откройте его всего за 1 🪙! [ПРОБЕЛ / ESC: пропуск]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#e2e8f0',
+    }).setOrigin(0.5);
+
+    this.cinematicContainer.add([bar, title, sub]);
+
+    // Плавно переводим камеру на центр фазы 2 (x: 1440, y: 320)
+    this.cameras.main.stopFollow();
+    this.cameras.main.pan(1440, 320, 2200, 'Sine.easeInOut', false, (_camera, progress) => {
+      if (progress >= 1) {
+        this.showPhase2Highlights();
+
+        this.time.delayedCall(2600, () => {
+          if (!this.isCinematicActive) return;
+          this.cameras.main.pan(this.playerContainer.x, this.playerContainer.y, 1800, 'Sine.easeInOut', false, (_cam, backProgress) => {
+            if (backProgress >= 1) {
+              this.endPhase2Cinematic();
+            }
+          });
+        });
+      }
+    });
+  }
+
+  private showPhase2Highlights(): void {
+    this.showFloatingNotice(1440, 210, '🌽 Поля сладкой Кукурузы', '#facc15');
+    this.showFloatingNotice(1440, 420, '🍉 Бахча сочных Арбузов', '#f43f5e');
+    this.showFloatingNotice(1120, 500, '🐀 Норы полевых крыс (Берегите урожай!)', '#fb923c');
+    this.showFloatingNotice(960, 310, '🚪 Проход: всего 1 🪙!', '#4ade80');
+  }
+
+  private endPhase2Cinematic(): void {
+    if (this.cinematicContainer) {
+      this.cinematicContainer.destroy();
+      this.cinematicContainer = null;
+    }
+    this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
+    this.isCinematicActive = false;
+    this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 50, '🗺️ Новые земли открыты! Ворота на востоке ждут (1 🪙)', '#4ade80');
+  }
+
+  private tryUnlockPhase2(): void {
+    if (this.phase2Unlocked) return;
+
+    if (this.coins < 1) {
+      this.playErrorSound();
+      this.showFloatingNotice(this.phase2GateX, this.phase2GateY - 40, 'Нужна 1 монета для открытия!', '#f87171');
+      return;
+    }
+
+    this.coins -= 1;
+    this.phase2Unlocked = true;
+    this.updateCoinsHud();
+
+    // Открываем ворота
+    if (this.phase2GateDoor) {
+      this.tweens.add({
+        targets: this.phase2GateDoor,
+        alpha: 0,
+        y: this.phase2GateY + 60,
+        duration: 800,
+      });
+    }
+
+    if (this.phase2GateSignText) {
+      this.phase2GateSignText.setText('🚪 ВОСТОЧНЫЕ УГОДЬЯ\n(Открыто)');
+    }
+
+    // Разблокируем зоны 5 и 6 и все их грядки
+    for (const z of this.zones) {
+      if (z.id === 5 || z.id === 6) {
+        z.unlocked = true;
+        z.fences.forEach((f) => f.destroy());
+        z.fences = [];
+        if (z.signContainer) {
+          z.signContainer.destroy();
+          z.signContainer = undefined;
+        }
+      }
+    }
+
+    for (const plot of this.plots) {
+      if (plot.zoneId === 5 || plot.zoneId === 6) {
+        plot.unlocked = true;
+        this.updatePlotVisuals(plot);
+      }
+    }
+
+    this.playPowerup();
+    this.showFloatingNotice(this.phase2GateX + 60, this.phase2GateY - 40, '🎉 Фаза 2 открыта! Доступны Кукуруза 🌽 и Арбузы 🍉!\nБерегитесь крыс 🐀!', '#4ade80');
+  }
+
+  private playRatAlert(): void {
+    this.playTone(850, 'sawtooth', 0.08, 0.06);
+    setTimeout(() => this.playTone(1100, 'sawtooth', 0.09, 0.06), 70);
+    setTimeout(() => this.playTone(920, 'sawtooth', 0.08, 0.06), 140);
+  }
+
+  private playScaredRat(): void {
+    this.playTone(1200, 'sawtooth', 0.1, 0.07);
+    setTimeout(() => this.playTone(1550, 'sawtooth', 0.12, 0.06), 60);
+    setTimeout(() => this.playTone(1800, 'sine', 0.14, 0.05), 130);
   }
 }
