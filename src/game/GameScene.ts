@@ -3,6 +3,13 @@ import {
   CropType,
   CropInfo,
   CROPS,
+  FarmProductType,
+  ProductInfo,
+  ALL_PRODUCTS,
+  FARM_CONTRACTS,
+  FarmContract,
+  FARM_MILESTONES,
+  FarmMilestone,
   PlotState,
   Plot,
   FarmZone,
@@ -74,14 +81,46 @@ export class GameScene extends Phaser.Scene {
   // Ресурсы
   private coins = INITIAL_COINS;
   private water = INITIAL_WATER;
-  private inventory: Record<CropType, number> = {
+  private inventory: Record<FarmProductType, number> = {
     carrot: 0,
     wheat: 0,
     strawberry: 0,
     pumpkin: 0,
     corn: 0,
     watermelon: 0,
+    egg: 0,
+    flour: 0,
+    milk: 0,
   };
+
+  // Производственные объекты и животноводство (Фаза 2)
+  private isCoopUnlocked = false;
+  private coopState: 'idle' | 'producing' | 'ready' = 'idle';
+  private coopTimer = 0;
+
+  private isMillUnlocked = false;
+  private millState: 'idle' | 'grinding' | 'ready' = 'idle';
+  private millTimer = 0;
+
+  private isDairyUnlocked = false;
+  private dairyState: 'idle' | 'milking' | 'ready' = 'idle';
+  private dairyTimer = 0;
+
+  // Статистика для отслеживания этапов развития
+  private statsCarrotsHarvested = 0;
+  private statsEggsCollected = 0;
+  private statsFlourMilled = 0;
+  private statsMilkCollected = 0;
+  private statsContractsCompleted = 0;
+
+  // Контракты и Дневник Развития (10 этапов)
+  private completedContracts: Set<string> = new Set();
+  private completedMilestones: Set<number> = new Set();
+  private currentMilestoneId = 1;
+  private milestoneText!: Phaser.GameObjects.Text;
+  private journalModal!: Phaser.GameObjects.Container;
+  private isJournalOpen = false;
+  private marketActiveTab: 'exchange' | 'contracts' = 'exchange';
 
   // Прокачка
   private waterCanLevel = 1;
@@ -122,15 +161,18 @@ export class GameScene extends Phaser.Scene {
   private plots: Plot[] = [];
 
   // Рыночные цены
-  private marketPrices: Record<CropType, number> = {
+  private marketPrices: Record<FarmProductType, number> = {
     carrot: CROPS.carrot.basePrice,
     wheat: CROPS.wheat.basePrice,
     strawberry: CROPS.strawberry.basePrice,
     pumpkin: CROPS.pumpkin.basePrice,
     corn: CROPS.corn.basePrice,
     watermelon: CROPS.watermelon.basePrice,
+    egg: ALL_PRODUCTS.egg.basePrice,
+    flour: ALL_PRODUCTS.flour.basePrice,
+    milk: ALL_PRODUCTS.milk.basePrice,
   };
-  private hotCrop: CropType | null = null;
+  private hotCrop: FarmProductType | null = null;
   private marketTimer = MARKET_REFRESH_INTERVAL;
 
   // Вредители
@@ -254,6 +296,10 @@ export class GameScene extends Phaser.Scene {
     this.load.image('sprout_stump1', 'assets/sprout/objects/stump1.png');
     this.load.image('sprout_stone1', 'assets/sprout/objects/stone1.png');
     this.load.image('sprout_paths', 'assets/sprout/objects/paths.png');
+    this.load.image('sprout_chicken_house', 'assets/sprout/objects/chicken_house.png');
+    this.load.image('sprout_egg', 'assets/sprout/objects/egg.png');
+    this.load.image('sprout_milk', 'assets/sprout/objects/milk.png');
+    this.load.image('sprout_hay', 'assets/sprout/objects/hay.png');
   }
 
   create(): void {
@@ -304,8 +350,10 @@ export class GameScene extends Phaser.Scene {
     this.createCrowMinigameModal(width, height);
     this.createRatMinigameModal(width, height);
     this.createPauseModal(width, height);
+    this.createJournalModal(width, height);
 
     this.refreshMarketPrices(true);
+    this.checkMilestones();
 
     // Менеджер интерактивного обучения
     this.tutorialManager = new TutorialManager(this);
@@ -326,7 +374,36 @@ export class GameScene extends Phaser.Scene {
     this.water = INITIAL_WATER;
     this.speedLevel = 1;
     this.hasScarecrow = false;
-    this.inventory = { carrot: 0, wheat: 0, strawberry: 0, pumpkin: 0, corn: 0, watermelon: 0 };
+    this.inventory = {
+      carrot: 0,
+      wheat: 0,
+      strawberry: 0,
+      pumpkin: 0,
+      corn: 0,
+      watermelon: 0,
+      egg: 0,
+      flour: 0,
+      milk: 0,
+    };
+    this.isCoopUnlocked = false;
+    this.coopState = 'idle';
+    this.coopTimer = 0;
+    this.isMillUnlocked = false;
+    this.millState = 'idle';
+    this.millTimer = 0;
+    this.isDairyUnlocked = false;
+    this.dairyState = 'idle';
+    this.dairyTimer = 0;
+    this.statsCarrotsHarvested = 0;
+    this.statsEggsCollected = 0;
+    this.statsFlourMilled = 0;
+    this.statsMilkCollected = 0;
+    this.statsContractsCompleted = 0;
+    this.completedContracts.clear();
+    this.completedMilestones.clear();
+    this.currentMilestoneId = 1;
+    this.isJournalOpen = false;
+    this.marketActiveTab = 'exchange';
     this.targetMovePoint = null;
     this.pendingTargetObject = null;
     this.plots = [];
@@ -403,6 +480,7 @@ export class GameScene extends Phaser.Scene {
 
     this.playPowerup();
     this.showFloatingNotice(zone.signX, zone.signY - 30, `🎉 ${zone.name} открыта!`, '#4ade80');
+    this.checkMilestones();
 
     // Ключевое условие: покупка Клубники (Zone 3) открывает Фазу 2!
     if (zone.cropType === 'strawberry' || zone.id === 3) {
@@ -410,7 +488,7 @@ export class GameScene extends Phaser.Scene {
       this.phase2.onStrawberryUnlocked(() => {
         this.cameras.main.setBounds(0, 0, WORLD_WIDTH, this.scale.height);
         this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
-        this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 50, '🍓 Клубника открыта! Ворота восточных земель ждут (1 🪙)', '#facc15');
+        this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 50, `🍓 Клубника открыта! Ворота восточных земель ждут (${PHASE2_CONFIG.unlockCost} 🪙)`, '#facc15');
       });
     }
   }
@@ -586,11 +664,32 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(36).setScrollFactor(0);
 
     // Метка версии игры (для удобного контроля обновлений)
-    this.add.text(width - 24, 70, 'v1.2.6', {
+    this.add.text(width - 24, 70, 'v1.3.0', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '10px',
       color: '#64748b',
     }).setOrigin(1, 0.5).setDepth(36).setScrollFactor(0);
+
+    // Индикатор текущей цели эволюции фермы (10 этапов)
+    this.milestoneText = this.add.text(width / 2, 92, '🏆 Цель 1/10: Соберите 3 моркови 🥕 [J - Журнал]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#fef08a',
+      backgroundColor: '#0f172ae6',
+      padding: { x: 12, y: 4 },
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true }).setScrollFactor(0).setDepth(36);
+    this.milestoneText.on('pointerdown', () => this.toggleJournal());
+
+    // Кнопка Журнала этапов развития
+    const journalBtn = this.add.text(width - 555, 34, '📜 Журнал [J]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#facc15',
+      backgroundColor: '#1e293b',
+      padding: { x: 8, y: 5 },
+    }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
+    journalBtn.on('pointerdown', () => this.toggleJournal());
 
     // Кнопка паузы
     this.pauseButtonText = this.add.text(width - 440, 34, '⏸️ Пауза [P]', {
@@ -643,9 +742,9 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
     shopBtn.on('pointerdown', () => this.openShopModal());
 
-    this.add.text(width / 2, this.scale.height - 18, 'WASD / Стрелки — Ходьба  |  ПРОБЕЛ — Действие  |  P — Пауза  |  T — Обучение  |  Фаза 2: Ворота справа (1 🪙)', {
+    this.add.text(width / 2, this.scale.height - 18, 'WASD — Ходьба  |  ПРОБЕЛ — Действие  |  J — Дневник этапов  |  P — Пауза  |  T — Обучение', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '13px',
+      fontSize: '12px',
       color: '#94a3b8',
       backgroundColor: '#0f172acc',
       padding: { x: 10, y: 3 },
@@ -707,6 +806,12 @@ export class GameScene extends Phaser.Scene {
       this.togglePause();
     });
 
+    // Клавиша J для Дневника этапов развития
+    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.J).on('down', () => {
+      if (this.isPaused) return;
+      this.toggleJournal();
+    });
+
     // Клавиша ESC
     this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
       if (this.tutorialManager && this.tutorialManager.isTutorialActive()) {
@@ -719,7 +824,9 @@ export class GameScene extends Phaser.Scene {
         this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
         return;
       }
-      if (this.isMarketOpen) {
+      if (this.isJournalOpen) {
+        this.closeJournalModal();
+      } else if (this.isMarketOpen) {
         this.closeMarketModal();
       } else if (this.isShopOpen) {
         this.closeShopModal();
@@ -729,39 +836,67 @@ export class GameScene extends Phaser.Scene {
     });
   }
 
-  // --- МОДАЛЬНОЕ ОКНО РЫНКА (ЧЁТКИЙ СПИСОК ЦЕН И ПРОДАЖА) ---
+  // --- МОДАЛЬНОЕ ОКНО РЫНКА (БИРЖА УРОЖАЯ И ДОСКА ЗАКАЗОВ) ---
 
   private createMarketModal(width: number, height: number): void {
     this.marketModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false);
 
     const backdrop = this.add.rectangle(0, 0, width * 2, height * 2, 0x000000, 0.75).setInteractive();
     backdrop.on('pointerdown', () => this.closeMarketModal());
-    const panel = this.add.rectangle(0, 0, 520, 460, 0x0f172a);
+    const panel = this.add.rectangle(0, 0, 590, 520, 0x0f172a);
     panel.setStrokeStyle(3, 0xfacc15);
 
-    const title = this.add.text(0, -195, '🏪 РЫНОЧНАЯ БИРЖА СКЛАДА', {
+    const title = this.add.text(0, -225, '🏪 ТОРГОВЫЙ СКЛАД ДОЛИНЫ', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '20px',
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const desc = this.add.text(0, -165, 'Котировки цен меняются каждые 25 сек. Продавайте на пике спроса!', {
+    // Вкладки: 1. Биржа цен | 2. Доска заказов
+    const tabExchangeBg = this.add.rectangle(-130, -188, 230, 30, 0x1e293b).setInteractive({ useHandCursor: true }).setName('tabExchangeBg');
+    tabExchangeBg.setStrokeStyle(2, 0xfacc15);
+    const tabExchangeText = this.add.text(-130, -188, '📊 БИРЖА УРОЖАЯ', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#facc15',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setName('tabExchangeText');
+
+    const tabContractsBg = this.add.rectangle(130, -188, 230, 30, 0x0f172a).setInteractive({ useHandCursor: true }).setName('tabContractsBg');
+    tabContractsBg.setStrokeStyle(1, 0x475569);
+    const tabContractsText = this.add.text(130, -188, '📜 ЗАКАЗЫ ГОРОДА', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#94a3b8',
-    }).setOrigin(0.5);
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setName('tabContractsText');
 
-    const listContainer = this.add.container(0, -130).setName('marketList');
+    tabExchangeBg.on('pointerdown', () => {
+      this.marketActiveTab = 'exchange';
+      this.updateMarketModalContent();
+    });
+    tabContractsBg.on('pointerdown', () => {
+      this.marketActiveTab = 'contracts';
+      this.updateMarketModalContent();
+    });
 
-    const sellAllBtnBg = this.add.rectangle(0, 140, 380, 44, 0x16a34a)
+    const desc = this.add.text(0, -155, 'Котировки цен меняются каждые 25 сек. Продавайте на пике спроса!', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#94a3b8',
+    }).setOrigin(0.5).setName('marketDesc');
+
+    const listContainer = this.add.container(0, -135).setName('marketList');
+
+    const sellAllBtnBg = this.add.rectangle(0, 195, 360, 40, 0x16a34a)
       .setInteractive({ useHandCursor: true })
       .setName('sellAllBtnBg');
     sellAllBtnBg.setStrokeStyle(2, 0x4ade80);
 
-    const sellAllBtn = this.add.text(0, 140, 'ПРОДАТЬ ВЕСЬ УРОЖАЙ [ПРОБЕЛ]', {
+    const sellAllBtn = this.add.text(0, 195, 'ПРОДАТЬ ВЕСЬ УРОЖАЙ [ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '16px',
+      fontSize: '15px',
       color: '#ffffff',
       fontStyle: 'bold',
     }).setOrigin(0.5).setName('sellAllBtn').setInteractive({ useHandCursor: true });
@@ -774,10 +909,10 @@ export class GameScene extends Phaser.Scene {
     sellAllBtnBg.on('pointerdown', handleSell);
     sellAllBtn.on('pointerdown', handleSell);
 
-    const closeBtnBg = this.add.rectangle(0, 192, 180, 32, 0x334155).setInteractive({ useHandCursor: true });
-    const closeBtn = this.add.text(0, 192, 'ЗАКРЫТЬ [ESC]', {
+    const closeBtnBg = this.add.rectangle(0, 235, 180, 28, 0x334155).setInteractive({ useHandCursor: true });
+    const closeBtn = this.add.text(0, 235, 'ЗАКРЫТЬ [ESC]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '13px',
+      fontSize: '12px',
       color: '#e2e8f0',
       fontStyle: 'bold',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
@@ -785,7 +920,21 @@ export class GameScene extends Phaser.Scene {
     closeBtnBg.on('pointerdown', () => this.closeMarketModal());
     closeBtn.on('pointerdown', () => this.closeMarketModal());
 
-    this.marketModal.add([backdrop, panel, title, desc, listContainer, sellAllBtnBg, sellAllBtn, closeBtnBg, closeBtn]);
+    this.marketModal.add([
+      backdrop,
+      panel,
+      title,
+      tabExchangeBg,
+      tabExchangeText,
+      tabContractsBg,
+      tabContractsText,
+      desc,
+      listContainer,
+      sellAllBtnBg,
+      sellAllBtn,
+      closeBtnBg,
+      closeBtn,
+    ]);
   }
 
   private openMarketModal(): void {
@@ -805,47 +954,365 @@ export class GameScene extends Phaser.Scene {
     const list = this.marketModal.getByName('marketList') as Phaser.GameObjects.Container;
     list.removeAll(true);
 
-    const crops: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
-    let totalValue = 0;
+    const tabExBg = this.marketModal.getByName('tabExchangeBg') as Phaser.GameObjects.Rectangle;
+    const tabExTxt = this.marketModal.getByName('tabExchangeText') as Phaser.GameObjects.Text;
+    const tabCoBg = this.marketModal.getByName('tabContractsBg') as Phaser.GameObjects.Rectangle;
+    const tabCoTxt = this.marketModal.getByName('tabContractsText') as Phaser.GameObjects.Text;
+    const desc = this.marketModal.getByName('marketDesc') as Phaser.GameObjects.Text;
+    const sellBtn = this.marketModal.getByName('sellAllBtn') as Phaser.GameObjects.Text;
+    const sellBtnBg = this.marketModal.getByName('sellAllBtnBg') as Phaser.GameObjects.Rectangle;
 
-    crops.forEach((key, idx) => {
-      const info = CROPS[key];
-      const count = this.inventory[key];
-      const price = this.marketPrices[key];
-      const sum = count * price;
-      totalValue += sum;
+    if (this.marketActiveTab === 'exchange') {
+      tabExBg.setFillStyle(0x1e293b).setStrokeStyle(2, 0xfacc15);
+      tabExTxt.setColor('#facc15');
+      tabCoBg.setFillStyle(0x0f172a).setStrokeStyle(1, 0x475569);
+      tabCoTxt.setColor('#94a3b8');
+      desc.setText('Котировки цен меняются каждые 25 сек. Продавайте на пике спроса!');
+      sellBtn.setVisible(true);
+      sellBtnBg.setVisible(true);
 
-      const isHot = key === this.hotCrop;
-      const y = idx * 40;
+      const allProductKeys: FarmProductType[] = [
+        'carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon', 'egg', 'flour', 'milk'
+      ];
+      let totalValue = 0;
 
-      const rowBg = this.add.rectangle(0, y, 450, 34, isHot ? 0x451a03 : 0x1e293b);
-      rowBg.setStrokeStyle(1, isHot ? 0xf59e0b : 0x334155);
+      allProductKeys.forEach((key, idx) => {
+        const info = ALL_PRODUCTS[key];
+        const count = this.inventory[key] || 0;
+        const price = this.marketPrices[key] || info.basePrice;
+        const sum = count * price;
+        totalValue += sum;
 
-      const label = this.add.text(-210, y, `${info.icon} ${info.name}: ${price} 🪙/шт ${isHot ? '🔥 БУМ СПРОСА!' : ''}`, {
+        const isHot = key === this.hotCrop;
+        const y = idx * 34;
+
+        const rowBg = this.add.rectangle(0, y, 530, 28, isHot ? 0x451a03 : 0x1e293b);
+        rowBg.setStrokeStyle(1, isHot ? 0xf59e0b : 0x334155);
+
+        const label = this.add.text(-250, y, `${info.icon} ${info.name}: ${price} 🪙 ${isHot ? '🔥 БУМ СПРОСА!' : ''}`, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '11px',
+          color: isHot ? '#fef08a' : '#f8fafc',
+          fontStyle: isHot ? 'bold' : 'normal',
+        }).setOrigin(0, 0.5);
+
+        const rightInfo = this.add.text(250, y, `В корзине: ${count} = ${sum} 🪙`, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '11px',
+          color: sum > 0 ? '#4ade80' : '#94a3b8',
+          fontStyle: 'bold',
+        }).setOrigin(1, 0.5);
+
+        list.add([rowBg, label, rightInfo]);
+      });
+
+      if (sellBtn) {
+        sellBtn.setText(`ПРОДАТЬ ВЕСЬ ТОВАР (+${totalValue} 🪙) [ПРОБЕЛ]`);
+      }
+      if (sellBtnBg) {
+        sellBtnBg.setFillStyle(totalValue > 0 ? 0x16a34a : 0x334155);
+      }
+    } else {
+      // Вкладка ЗАКАЗЫ ГОРОДА
+      tabExBg.setFillStyle(0x0f172a).setStrokeStyle(1, 0x475569);
+      tabExTxt.setColor('#94a3b8');
+      tabCoBg.setFillStyle(0x1e293b).setStrokeStyle(2, 0xfacc15);
+      tabCoTxt.setColor('#facc15');
+      desc.setText('Выполняйте спецзаказы жителей долины за щедрые денежные премии!');
+      sellBtn.setVisible(false);
+      sellBtnBg.setVisible(false);
+
+      FARM_CONTRACTS.forEach((c, idx) => {
+        const isDone = this.completedContracts.has(c.id);
+        const y = idx * 52;
+
+        const cardBg = this.add.rectangle(0, y, 530, 46, isDone ? 0x064e3b : 0x1e293b);
+        cardBg.setStrokeStyle(1, isDone ? 0x10b981 : 0x334155);
+
+        const titleText = this.add.text(-250, y - 10, `${isDone ? '✅' : '📜'} ${c.title} • ${c.customer}`, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '12px',
+          color: isDone ? '#a7f3d0' : '#facc15',
+          fontStyle: 'bold',
+        }).setOrigin(0, 0.5);
+
+        // Формируем список требуемых предметов
+        const reqParts: string[] = [];
+        let canFulfill = !isDone;
+        for (const [prod, need] of Object.entries(c.required)) {
+          const info = ALL_PRODUCTS[prod as FarmProductType];
+          const has = this.inventory[prod as FarmProductType] || 0;
+          if (has < (need as number)) canFulfill = false;
+          reqParts.push(`${info.icon} ${has}/${need}`);
+        }
+
+        const reqText = this.add.text(-250, y + 10, `Требуется: ${reqParts.join('  ')} | Награда: +${c.rewardCoins} 🪙 (${c.bonusText})`, {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '10px',
+          color: '#cbd5e1',
+        }).setOrigin(0, 0.5);
+
+        // Кнопка выполнения
+        const btnBg = this.add.rectangle(200, y, 100, 28, isDone ? 0x334155 : canFulfill ? 0x16a34a : 0x475569);
+        const btnText = this.add.text(200, y, isDone ? 'ВЫПОЛНЕНО' : canFulfill ? 'ВЫПОЛНИТЬ' : 'МАЛО ТОВАРА', {
+          fontFamily: 'system-ui, sans-serif',
+          fontSize: '10px',
+          color: isDone ? '#94a3b8' : '#ffffff',
+          fontStyle: 'bold',
+        }).setOrigin(0.5);
+
+        if (canFulfill) {
+          btnBg.setInteractive({ useHandCursor: true });
+          btnText.setInteractive({ useHandCursor: true });
+          const executeContract = () => {
+            for (const [prod, need] of Object.entries(c.required)) {
+              this.inventory[prod as FarmProductType] -= need as number;
+            }
+            this.coins += c.rewardCoins;
+            this.completedContracts.add(c.id);
+            this.statsContractsCompleted++;
+            this.updateCoinsHud();
+            this.updateInventoryHud();
+            this.playSaleSound();
+            this.showFloatingNotice(
+              this.cameras.main.worldView.centerX,
+              this.cameras.main.worldView.centerY - 50,
+              `🎉 Заказ "${c.title}" выполнен! +${c.rewardCoins} 🪙!`,
+              '#4ade80'
+            );
+            this.checkMilestones();
+            this.updateMarketModalContent();
+          };
+          btnBg.on('pointerdown', executeContract);
+          btnText.on('pointerdown', executeContract);
+        }
+
+        list.add([cardBg, titleText, reqText, btnBg, btnText]);
+      });
+    }
+  }
+
+  // --- ДНЕВНИК РАЗВИТИЯ ФЕРМЫ (10 ЭТАПОВ) ---
+
+  private createJournalModal(width: number, height: number): void {
+    this.journalModal = this.add.container(width / 2, height / 2).setDepth(130).setVisible(false);
+
+    const backdrop = this.add.rectangle(0, 0, width * 2, height * 2, 0x000000, 0.75).setInteractive();
+    backdrop.on('pointerdown', () => this.closeJournalModal());
+
+    const panel = this.add.rectangle(0, 0, 580, 520, 0x0f172a);
+    panel.setStrokeStyle(3, 0xfacc15);
+
+    const title = this.add.text(0, -230, '🏆 ДНЕВНИК РАЗВИТИЯ ФЕРМЫ', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '20px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const desc = this.add.text(0, -204, '10 этапов эволюции вашей долины • Клавиша [J] или [ESC] для выхода', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#94a3b8',
+    }).setOrigin(0.5);
+
+    const listContainer = this.add.container(0, -170).setName('journalList');
+
+    const closeBtnBg = this.add.rectangle(0, 230, 200, 34, 0x334155).setInteractive({ useHandCursor: true });
+    const closeBtn = this.add.text(0, 230, 'ЗАКРЫТЬ [ESC / J]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '12px',
+      color: '#e2e8f0',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    closeBtnBg.on('pointerdown', () => this.closeJournalModal());
+    closeBtn.on('pointerdown', () => this.closeJournalModal());
+
+    this.journalModal.add([backdrop, panel, title, desc, listContainer, closeBtnBg, closeBtn]);
+  }
+
+  private toggleJournal(): void {
+    if (this.isJournalOpen) {
+      this.closeJournalModal();
+    } else {
+      this.openJournalModal();
+    }
+  }
+
+  private openJournalModal(): void {
+    if (this.isMarketOpen) this.closeMarketModal();
+    if (this.isShopOpen) this.closeShopModal();
+    this.isJournalOpen = true;
+    const cam = this.cameras.main;
+    this.journalModal.setPosition(cam.worldView.centerX, cam.worldView.centerY);
+    this.updateJournalModalContent();
+    this.journalModal.setVisible(true);
+  }
+
+  private closeJournalModal(): void {
+    this.isJournalOpen = false;
+    this.journalModal.setVisible(false);
+  }
+
+  private updateJournalModalContent(): void {
+    const list = this.journalModal.getByName('journalList') as Phaser.GameObjects.Container;
+    list.removeAll(true);
+
+    const completedCount = this.completedMilestones.size;
+    const progressBg = this.add.rectangle(0, 5, 520, 22, 0x1e293b);
+    progressBg.setStrokeStyle(1, 0x334155);
+    const fillW = 520 * (completedCount / 10);
+    const progressFill = this.add.rectangle(-260, 5, fillW, 22, 0x22c55e).setOrigin(0, 0.5);
+    const progressText = this.add.text(0, 5, `Завершено: ${completedCount} из 10 этапов (${completedCount * 10}%)`, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+    list.add([progressBg, progressFill, progressText]);
+
+    FARM_MILESTONES.forEach((m, idx) => {
+      const isDone = this.completedMilestones.has(m.id);
+      const isCurrent = m.id === this.currentMilestoneId && !isDone;
+      const y = 38 + idx * 34;
+
+      const rowBg = this.add.rectangle(0, y, 520, 30, isDone ? 0x064e3b : isCurrent ? 0x451a03 : 0x1e293b);
+      rowBg.setStrokeStyle(1, isDone ? 0x10b981 : isCurrent ? 0xf59e0b : 0x334155);
+
+      const statusIcon = isDone ? '✅' : isCurrent ? '🎯' : '🔒';
+      const label = this.add.text(-245, y, `${statusIcon} ${m.id}. ${m.title}: ${m.hint}`, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: isHot ? '#fef08a' : '#f8fafc',
-        fontStyle: isHot ? 'bold' : 'normal',
+        fontSize: '11px',
+        color: isDone ? '#a7f3d0' : isCurrent ? '#fef08a' : '#94a3b8',
+        fontStyle: isCurrent ? 'bold' : 'normal',
       }).setOrigin(0, 0.5);
 
-      const rightInfo = this.add.text(210, y, `В корзине: ${count} шт = ${sum} 🪙`, {
+      const reward = this.add.text(245, y, `+${m.rewardCoins} 🪙`, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '12px',
-        color: sum > 0 ? '#4ade80' : '#94a3b8',
+        fontSize: '11px',
+        color: '#facc15',
         fontStyle: 'bold',
       }).setOrigin(1, 0.5);
 
-      list.add([rowBg, label, rightInfo]);
+      list.add([rowBg, label, reward]);
     });
+  }
 
-    const sellBtn = this.marketModal.getByName('sellAllBtn') as Phaser.GameObjects.Text;
-    const sellBtnBg = this.marketModal.getByName('sellAllBtnBg') as Phaser.GameObjects.Rectangle;
-    if (sellBtn) {
-      sellBtn.setText(`ПРОДАТЬ ВЕСЬ УРОЖАЙ (+${totalValue} 🪙) [ПРОБЕЛ]`);
+  private checkMilestones(): void {
+    for (const m of FARM_MILESTONES) {
+      if (this.completedMilestones.has(m.id)) continue;
+
+      let isDone = false;
+      switch (m.id) {
+        case 1:
+          isDone = this.statsCarrotsHarvested >= 3;
+          break;
+        case 2:
+          isDone = this.waterCanLevel >= 2;
+          break;
+        case 3:
+          isDone = this.zones.some((z) => z.id === 2 && z.unlocked);
+          break;
+        case 4:
+          isDone = this.zones.some((z) => z.id === 3 && z.unlocked);
+          break;
+        case 5:
+          isDone = this.phase2.isUnlocked();
+          break;
+        case 6:
+          isDone = this.statsEggsCollected >= 1;
+          break;
+        case 7:
+          isDone = this.zones.some((z) => z.id === 4 && z.unlocked) && this.zones.some((z) => z.id === 5 && z.unlocked);
+          break;
+        case 8:
+          isDone = this.statsFlourMilled >= 1;
+          break;
+        case 9:
+          isDone = this.zones.some((z) => z.id === 6 && z.unlocked);
+          break;
+        case 10:
+          isDone = this.isDairyUnlocked && this.statsMilkCollected >= 1 && this.coins >= 5000;
+          break;
+      }
+
+      if (isDone) {
+        this.completedMilestones.add(m.id);
+        this.coins += m.rewardCoins;
+        this.updateCoinsHud();
+        this.playVictoryFanfare();
+        this.showFloatingNotice(
+          this.playerContainer.x,
+          this.playerContainer.y - 60,
+          `🏆 ЭТАП ${m.id} ВЫПОЛНЕН: ${m.title}! (+${m.rewardCoins} 🪙)`,
+          '#facc15'
+        );
+
+        if (m.id === 10) {
+          this.showVictoryScreen();
+        }
+      }
     }
-    if (sellBtnBg) {
-      sellBtnBg.setFillStyle(totalValue > 0 ? 0x16a34a : 0x334155);
+
+    const nextM = FARM_MILESTONES.find((m) => !this.completedMilestones.has(m.id));
+    if (this.milestoneText) {
+      if (nextM) {
+        this.currentMilestoneId = nextM.id;
+        this.milestoneText.setText(`🏆 Цель ${nextM.id}/10: ${nextM.title} [J - Журнал]`);
+      } else {
+        this.milestoneText.setText('👑 ВСЕ 10 ЭТАПОВ ВЫПОЛНЕНЫ! ВЫ ЛЕГЕНДА ДОЛИНЫ! [J]');
+      }
     }
+
+    if (this.isJournalOpen) {
+      this.updateJournalModalContent();
+    }
+  }
+
+  private showVictoryScreen(): void {
+    this.playVictoryFanfare();
+    const { width, height } = this.scale;
+    const modal = this.add.container(this.cameras.main.worldView.centerX, this.cameras.main.worldView.centerY).setDepth(200);
+
+    const backdrop = this.add.rectangle(0, 0, width * 2, height * 2, 0x000000, 0.85).setInteractive();
+    const panel = this.add.rectangle(0, 0, 540, 360, 0x0f172a);
+    panel.setStrokeStyle(4, 0xfacc15);
+
+    const crown = this.add.text(0, -120, '👑', { fontSize: '48px' }).setOrigin(0.5);
+    const title = this.add.text(0, -60, 'ВЫ — ЛЕГЕНДА ДОЛИНЫ СПРАУТ!', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '22px',
+      color: '#facc15',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
+    const desc = this.add.text(0, 15,
+      `Вы успешно освоили все земли, наладили сельское хозяйство,\nпереработку зерна на мельнице и животноводство!\n\n` +
+      `🪙 Итоговый капитал: ${this.coins} монет\n` +
+      `🏆 Выполнено этапов: 10 из 10\n` +
+      `📜 Закрыто городских контрактов: ${this.completedContracts.size} из ${FARM_CONTRACTS.length}`, {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '13px',
+      color: '#e2e8f0',
+      align: 'center',
+    }).setOrigin(0.5);
+
+    const continueBtnBg = this.add.rectangle(0, 130, 300, 42, 0x16a34a).setInteractive({ useHandCursor: true });
+    const continueBtn = this.add.text(0, 130, 'ПРОДОЛЖИТЬ В ПЕСОЧНИЦЕ 🚀', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '14px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const handleClose = () => {
+      modal.destroy();
+    };
+    continueBtnBg.on('pointerdown', handleClose);
+    continueBtn.on('pointerdown', handleClose);
+
+    modal.add([backdrop, panel, crown, title, desc, continueBtnBg, continueBtn]);
   }
 
   // --- МИНИ-ИГРА "ОТБИВАНИЕ ВОРОН" (ФАЗА 1) ---
@@ -1338,6 +1805,7 @@ export class GameScene extends Phaser.Scene {
     this.updateCoinsHud();
     this.updateWaterHud();
     this.updateShopModalContents();
+    this.checkMilestones();
   }
 
   private spawnSprinklerVisual(level: number): void {
@@ -1509,12 +1977,16 @@ export class GameScene extends Phaser.Scene {
 
         if (target.state === 'ready') {
           this.inventory[target.cropType] += 1;
+          if (target.cropType === 'carrot') {
+            this.statsCarrotsHarvested += 1;
+          }
           this.updateInventoryHud();
           target.state = 'empty';
           target.growthProgress = 0;
           this.updatePlotVisuals(target);
           this.playHarvest();
           this.showFloatingNotice(target.x, target.y - 25, `+1 ${info.icon} (помощник)`, '#facc15');
+          this.checkMilestones();
         } else if (target.state === 'empty') {
           target.state = 'seeded';
           target.growthProgress = 0;
@@ -1736,6 +2208,7 @@ export class GameScene extends Phaser.Scene {
     this.updateFishingEvent(seconds);
     this.updateSprinklers(seconds);
     this.updateWorker(seconds);
+    this.updateProductionFacilities(seconds);
     this.detectInteractionTarget();
     this.checkActionKeys();
   }
@@ -2069,11 +2542,11 @@ export class GameScene extends Phaser.Scene {
   }
 
   private refreshMarketPrices(silent = false): void {
-    const cropKeys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
-    this.hotCrop = Phaser.Utils.Array.GetRandom(cropKeys) as CropType;
+    const allKeys: FarmProductType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon', 'egg', 'flour', 'milk'];
+    this.hotCrop = Phaser.Utils.Array.GetRandom(allKeys) as FarmProductType;
 
-    for (const key of cropKeys) {
-      const info = CROPS[key];
+    for (const key of allKeys) {
+      const info = ALL_PRODUCTS[key];
       let price = Phaser.Math.Between(info.minPrice, info.maxPrice);
       if (key === this.hotCrop) {
         price = Math.round(price * 1.5);
@@ -2081,14 +2554,14 @@ export class GameScene extends Phaser.Scene {
       this.marketPrices[key] = price;
 
       // Обновляем текст на наглядной доске у Амбара, если она присутствует
-      if (this.marketBoardTexts && this.marketBoardTexts[key]) {
+      if (this.marketBoardTexts && this.marketBoardTexts[key as CropType]) {
         const isHot = key === this.hotCrop;
-        this.marketBoardTexts[key].setText(`${info.icon} ${price}🪙${isHot ? '🔥' : ''}`);
-        this.marketBoardTexts[key].setColor(isHot ? '#fef08a' : '#ffffff');
+        this.marketBoardTexts[key as CropType].setText(`${info.icon} ${price}🪙${isHot ? '🔥' : ''}`);
+        this.marketBoardTexts[key as CropType].setColor(isHot ? '#fef08a' : '#ffffff');
       }
     }
 
-    const hotInfo = CROPS[this.hotCrop];
+    const hotInfo = ALL_PRODUCTS[this.hotCrop];
     const trendText = `🔥 БУМ на ${hotInfo.name}: ${this.marketPrices[this.hotCrop]} 🪙!`;
     this.marketTrendHudText.setText(`📈 ${trendText}`);
 
@@ -2103,15 +2576,15 @@ export class GameScene extends Phaser.Scene {
 
   private sellAllHarvest(): void {
     let revenue = 0;
-    const cropKeys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
-    for (const k of cropKeys) {
+    const allKeys: FarmProductType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon', 'egg', 'flour', 'milk'];
+    for (const k of allKeys) {
       revenue += this.inventory[k] * this.marketPrices[k];
       this.inventory[k] = 0;
     }
 
     if (revenue === 0) {
       this.playErrorSound();
-      this.showFloatingNotice(this.barnX, this.barnY - 40, 'Корзина пуста! Соберите урожай', '#f87171');
+      this.showFloatingNotice(this.barnX, this.barnY - 40, 'Корзина пуста! Соберите урожай или продукцию', '#f87171');
       return;
     }
 
@@ -2120,6 +2593,7 @@ export class GameScene extends Phaser.Scene {
     this.updateInventoryHud();
     this.playSaleSound();
     this.showFloatingNotice(this.barnX, this.barnY - 40, `💰 Продано на +${revenue} 🪙!`, '#facc15');
+    this.checkMilestones();
 
     if (this.tutorialManager) {
       this.tutorialManager.onCropsSold();
@@ -2205,6 +2679,54 @@ export class GameScene extends Phaser.Scene {
     // Лавка
     if (Phaser.Math.Distance.Between(px, py, this.shopX, this.shopY) <= INTERACT_RADIUS + 20) {
       this.showPrompt('[ПРОБЕЛ] Открыть лавку улучшений');
+      return;
+    }
+
+    // Курятник (Фаза 2)
+    const coopDist = Phaser.Math.Distance.Between(px, py, PHASE2_CONFIG.chickenCoopX, PHASE2_CONFIG.chickenCoopY);
+    if (coopDist <= INTERACT_RADIUS + 15) {
+      if (!this.isCoopUnlocked) {
+        this.showPrompt(`🐔 [ПРОБЕЛ] Построить Курятник (${PHASE2_CONFIG.chickenCoopCost} 🪙)`);
+      } else if (this.coopState === 'idle') {
+        const hasWheat = this.inventory.wheat >= 2;
+        this.showPrompt(hasWheat ? '🐔 [ПРОБЕЛ] Покормить кур (2 Пшеницы 🌾)' : '🐔 Курятник: нужно 2 Пшеницы 🌾 для корма');
+      } else if (this.coopState === 'producing') {
+        this.showPrompt(`🐔 Курочки несутся... (${Math.ceil(this.coopTimer)}с)`);
+      } else if (this.coopState === 'ready') {
+        this.showPrompt('🥚 [ПРОБЕЛ] Собрать свежие яйца! (+3 🥚)');
+      }
+      return;
+    }
+
+    // Ветряная мельница (Фаза 2)
+    const millDist = Phaser.Math.Distance.Between(px, py, PHASE2_CONFIG.millX, PHASE2_CONFIG.millY);
+    if (millDist <= INTERACT_RADIUS + 25) {
+      if (!this.isMillUnlocked) {
+        this.showPrompt(`💨 [ПРОБЕЛ] Построить Мельницу (${PHASE2_CONFIG.millCost} 🪙)`);
+      } else if (this.millState === 'idle') {
+        const hasWheat = this.inventory.wheat >= 2;
+        this.showPrompt(hasWheat ? '💨 [ПРОБЕЛ] Запустить помол (2 Пшеницы 🌾)' : '💨 Мельница: нужно 2 Пшеницы 🌾 для муки');
+      } else if (this.millState === 'grinding') {
+        this.showPrompt(`💨 Мельница мелет зерно... (${Math.ceil(this.millTimer)}с)`);
+      } else if (this.millState === 'ready') {
+        this.showPrompt('🥖 [ПРОБЕЛ] Забрать мешки муки! (+2 🥖)');
+      }
+      return;
+    }
+
+    // Молочная ферма / Корова (Фаза 2)
+    const cowDist = Phaser.Math.Distance.Between(px, py, PHASE2_CONFIG.dairyCowX, PHASE2_CONFIG.dairyCowY);
+    if (cowDist <= INTERACT_RADIUS + 20) {
+      if (!this.isDairyUnlocked) {
+        this.showPrompt(`🐄 [ПРОБЕЛ] Обустроить ферму коровы (${PHASE2_CONFIG.dairyCost} 🪙)`);
+      } else if (this.dairyState === 'idle') {
+        const hasCorn = this.inventory.corn >= 1;
+        this.showPrompt(hasCorn ? '🐄 [ПРОБЕЛ] Покормить Бурёнку (1 Кукуруза 🌽)' : '🐄 Корова: нужно 1 Кукурузу 🌽 для дойки');
+      } else if (this.dairyState === 'milking') {
+        this.showPrompt(`🐄 Бурёнка жуёт кукурузу... (${Math.ceil(this.dairyTimer)}с)`);
+      } else if (this.dairyState === 'ready') {
+        this.showPrompt('🥛 [ПРОБЕЛ] Подоить корову! (+2 🥛 Молока)');
+      }
       return;
     }
 
@@ -2332,6 +2854,24 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
+    // Курятник
+    if (Phaser.Math.Distance.Between(px, py, PHASE2_CONFIG.chickenCoopX, PHASE2_CONFIG.chickenCoopY) <= INTERACT_RADIUS + 15) {
+      this.interactWithChickenCoop();
+      return;
+    }
+
+    // Ветряная мельница
+    if (Phaser.Math.Distance.Between(px, py, PHASE2_CONFIG.millX, PHASE2_CONFIG.millY) <= INTERACT_RADIUS + 25) {
+      this.interactWithMill();
+      return;
+    }
+
+    // Молочная ферма
+    if (Phaser.Math.Distance.Between(px, py, PHASE2_CONFIG.dairyCowX, PHASE2_CONFIG.dairyCowY) <= INTERACT_RADIUS + 20) {
+      this.interactWithDairyCow();
+      return;
+    }
+
     if (this.hasWorker && this.workerContainer) {
       const distToWorker = Phaser.Math.Distance.Between(px, py, this.workerContainer.x, this.workerContainer.y);
       if (distToWorker <= 55) {
@@ -2416,12 +2956,16 @@ export class GameScene extends Phaser.Scene {
 
       case 'ready':
         this.inventory[plot.cropType] += 1;
+        if (plot.cropType === 'carrot') {
+          this.statsCarrotsHarvested += 1;
+        }
         this.updateInventoryHud();
         plot.state = 'empty';
         plot.growthProgress = 0;
         this.updatePlotVisuals(plot);
         this.playHarvest();
         this.showFloatingNotice(plot.x, plot.y - 25, `+1 ${info.icon} в корзину!`, '#facc15');
+        this.checkMilestones();
         if (this.tutorialManager) {
           this.tutorialManager.onCropHarvested();
         }
@@ -2462,9 +3006,17 @@ export class GameScene extends Phaser.Scene {
   }
 
   private updateInventoryHud(): void {
-    this.inventoryText.setText(
-      `🧺 Корзина: 🥕:${this.inventory.carrot} 🌾:${this.inventory.wheat} 🍓:${this.inventory.strawberry} 🎃:${this.inventory.pumpkin} 🌽:${this.inventory.corn} 🍉:${this.inventory.watermelon}`
-    );
+    let text = `🧺 Корзина: 🥕:${this.inventory.carrot} 🌾:${this.inventory.wheat} 🍓:${this.inventory.strawberry} 🎃:${this.inventory.pumpkin} 🌽:${this.inventory.corn} 🍉:${this.inventory.watermelon}`;
+    if (this.isCoopUnlocked || this.inventory.egg > 0) {
+      text += ` 🥚:${this.inventory.egg}`;
+    }
+    if (this.isMillUnlocked || this.inventory.flour > 0) {
+      text += ` 🥖:${this.inventory.flour}`;
+    }
+    if (this.isDairyUnlocked || this.inventory.milk > 0) {
+      text += ` 🥛:${this.inventory.milk}`;
+    }
+    this.inventoryText.setText(text);
   }
 
   public showFloatingNotice(x: number, y: number, text: string, color = '#fef08a'): void {
@@ -2682,6 +3234,244 @@ export class GameScene extends Phaser.Scene {
 
     this.playPowerup();
     this.showFloatingNotice(this.phase2GateX + 60, this.phase2GateY - 40, '🎉 Фаза 2 открыта! Доступны Кукуруза 🌽 и Арбузы 🍉!\nБерегитесь крыс 🐀!', '#4ade80');
+    this.checkMilestones();
+  }
+
+  // --- ПРОИЗВОДСТВЕННЫЕ ЗДАНИЯ И ПЕРЕРАБОТКА (ФАЗА 2) ---
+
+  private updateProductionFacilities(seconds: number): void {
+    // Курятник
+    if (this.isCoopUnlocked && this.phase2?.chickenCoopText) {
+      if (this.coopState === 'producing') {
+        this.coopTimer -= seconds;
+        if (this.coopTimer <= 0) {
+          this.coopState = 'ready';
+          this.phase2.chickenCoopText.setText('🥚 ЯЙЦА ГОТОВЫ!\n[ПРОБЕЛ]');
+          this.phase2.chickenCoopText.setColor('#4ade80');
+        } else {
+          this.phase2.chickenCoopText.setText(`🐔 Курочки несутся\n(${Math.ceil(this.coopTimer)}с)`);
+          this.phase2.chickenCoopText.setColor('#facc15');
+        }
+      } else if (this.coopState === 'ready') {
+        this.phase2.chickenCoopText.setText('🥚 ЯЙЦА ГОТОВЫ!\n[ПРОБЕЛ]');
+        this.phase2.chickenCoopText.setColor('#4ade80');
+      } else {
+        this.phase2.chickenCoopText.setText('🐔 КУРЯТНИК (Ждёт зерна)\n[ПРОБЕЛ]');
+        this.phase2.chickenCoopText.setColor('#fef08a');
+      }
+    }
+
+    // Мельница
+    if (this.isMillUnlocked && this.phase2?.millText) {
+      if (this.millState === 'grinding') {
+        this.millTimer -= seconds;
+        if (this.millTimer <= 0) {
+          this.millState = 'ready';
+          this.phase2.millText.setText('🥖 МУКА ГОТОВА!\n[ПРОБЕЛ]');
+          this.phase2.millText.setColor('#4ade80');
+        } else {
+          this.phase2.millText.setText(`💨 Помол зерна\n(${Math.ceil(this.millTimer)}с)`);
+          this.phase2.millText.setColor('#fbbf24');
+        }
+      } else if (this.millState === 'ready') {
+        this.phase2.millText.setText('🥖 МУКА ГОТОВА!\n[ПРОБЕЛ]');
+        this.phase2.millText.setColor('#4ade80');
+      } else {
+        this.phase2.millText.setText('💨 МЕЛЬНИЦА (Ждёт пшеницу)\n[ПРОБЕЛ]');
+        this.phase2.millText.setColor('#cbd5e1');
+      }
+    }
+
+    // Молочная ферма (Корова)
+    if (this.isDairyUnlocked && this.phase2?.dairyText) {
+      if (this.dairyState === 'milking') {
+        this.dairyTimer -= seconds;
+        if (this.dairyTimer <= 0) {
+          this.dairyState = 'ready';
+          this.phase2.dairyText.setText('🥛 МОЛОКО ГОТОВО!\n[ПРОБЕЛ]');
+          this.phase2.dairyText.setColor('#4ade80');
+        } else {
+          this.phase2.dairyText.setText(`🐄 Бурёнка отдыхает\n(${Math.ceil(this.dairyTimer)}с)`);
+          this.phase2.dairyText.setColor('#38bdf8');
+        }
+      } else if (this.dairyState === 'ready') {
+        this.phase2.dairyText.setText('🥛 МОЛОКО ГОТОВО!\n[ПРОБЕЛ]');
+        this.phase2.dairyText.setColor('#4ade80');
+      } else {
+        this.phase2.dairyText.setText('🐄 МОЛОЧНАЯ ФЕРМА (Ждёт кукурузу)\n[ПРОБЕЛ]');
+        this.phase2.dairyText.setColor('#7dd3fc');
+      }
+    }
+  }
+
+  private interactWithChickenCoop(): void {
+    const coopX = PHASE2_CONFIG.chickenCoopX;
+    const coopY = PHASE2_CONFIG.chickenCoopY;
+
+    if (!this.isCoopUnlocked) {
+      if (this.coins < PHASE2_CONFIG.chickenCoopCost) {
+        this.playErrorSound();
+        this.showFloatingNotice(coopX, coopY - 30, `Нужно ещё ${PHASE2_CONFIG.chickenCoopCost - this.coins} 🪙!`, '#f87171');
+        return;
+      }
+      this.coins -= PHASE2_CONFIG.chickenCoopCost;
+      this.isCoopUnlocked = true;
+      this.updateCoinsHud();
+      this.playPowerup();
+      this.showFloatingNotice(coopX, coopY - 30, '🎉 Курятник построен!', '#facc15');
+      this.checkMilestones();
+      return;
+    }
+
+    if (this.coopState === 'idle') {
+      if (this.inventory.wheat < 2) {
+        this.playErrorSound();
+        this.showFloatingNotice(coopX, coopY - 30, 'Нужно 2 Пшеницы 🌾 для корма кур!', '#f87171');
+        return;
+      }
+      this.inventory.wheat -= 2;
+      this.coopState = 'producing';
+      this.coopTimer = 8;
+      this.updateInventoryHud();
+      this.playCluckSound();
+      this.showFloatingNotice(coopX, coopY - 30, '🐔 Курочки клюют зёрна (-2 🌾)!', '#fef08a');
+      return;
+    }
+
+    if (this.coopState === 'producing') {
+      this.showFloatingNotice(coopX, coopY - 30, `🐔 Курочки несутся... (${Math.ceil(this.coopTimer)}с)`, '#fde047');
+      return;
+    }
+
+    if (this.coopState === 'ready') {
+      this.inventory.egg += 3;
+      this.statsEggsCollected += 3;
+      this.coopState = 'idle';
+      this.updateInventoryHud();
+      this.playCluckSound();
+      this.showFloatingNotice(coopX, coopY - 30, '🥚 +3 Свежих Яйца!', '#fef08a');
+      this.checkMilestones();
+      return;
+    }
+  }
+
+  private interactWithMill(): void {
+    const millX = PHASE2_CONFIG.millX;
+    const millY = PHASE2_CONFIG.millY;
+
+    if (!this.isMillUnlocked) {
+      if (this.coins < PHASE2_CONFIG.millCost) {
+        this.playErrorSound();
+        this.showFloatingNotice(millX, millY - 30, `Нужно ещё ${PHASE2_CONFIG.millCost - this.coins} 🪙!`, '#f87171');
+        return;
+      }
+      this.coins -= PHASE2_CONFIG.millCost;
+      this.isMillUnlocked = true;
+      this.updateCoinsHud();
+      this.playPowerup();
+      this.showFloatingNotice(millX, millY - 30, '🎉 Ветряная мельница восстановлена!', '#facc15');
+      this.checkMilestones();
+      return;
+    }
+
+    if (this.millState === 'idle') {
+      if (this.inventory.wheat < 2) {
+        this.playErrorSound();
+        this.showFloatingNotice(millX, millY - 30, 'Нужно 2 Пшеницы 🌾 для помола муки!', '#f87171');
+        return;
+      }
+      this.inventory.wheat -= 2;
+      this.millState = 'grinding';
+      this.millTimer = 10;
+      this.updateInventoryHud();
+      this.playMillSound();
+      this.showFloatingNotice(millX, millY - 30, '💨 Жернова запущены (-2 🌾)!', '#fed7aa');
+      return;
+    }
+
+    if (this.millState === 'grinding') {
+      this.showFloatingNotice(millX, millY - 30, `💨 Помол идёт... (${Math.ceil(this.millTimer)}с)`, '#fed7aa');
+      return;
+    }
+
+    if (this.millState === 'ready') {
+      this.inventory.flour += 2;
+      this.statsFlourMilled += 2;
+      this.millState = 'idle';
+      this.updateInventoryHud();
+      this.playPowerup();
+      this.showFloatingNotice(millX, millY - 30, '🥖 +2 Мешка Отборной Муки!', '#fde68a');
+      this.checkMilestones();
+      return;
+    }
+  }
+
+  private interactWithDairyCow(): void {
+    const cowX = PHASE2_CONFIG.dairyCowX;
+    const cowY = PHASE2_CONFIG.dairyCowY;
+
+    if (!this.isDairyUnlocked) {
+      if (this.coins < PHASE2_CONFIG.dairyCost) {
+        this.playErrorSound();
+        this.showFloatingNotice(cowX, cowY - 30, `Нужно ещё ${PHASE2_CONFIG.dairyCost - this.coins} 🪙!`, '#f87171');
+        return;
+      }
+      this.coins -= PHASE2_CONFIG.dairyCost;
+      this.isDairyUnlocked = true;
+      this.updateCoinsHud();
+      this.playPowerup();
+      this.showFloatingNotice(cowX, cowY - 30, '🎉 Молочная ферма обустроена!', '#7dd3fc');
+      this.checkMilestones();
+      return;
+    }
+
+    if (this.dairyState === 'idle') {
+      if (this.inventory.corn < 1) {
+        this.playErrorSound();
+        this.showFloatingNotice(cowX, cowY - 30, 'Нужна 1 Кукуруза 🌽 для кормления Бурёнки!', '#f87171');
+        return;
+      }
+      this.inventory.corn -= 1;
+      this.dairyState = 'milking';
+      this.dairyTimer = 12;
+      this.updateInventoryHud();
+      this.playMooSound();
+      this.showFloatingNotice(cowX, cowY - 30, '🐄 Бурёнка с аппетитом жуёт кукурузу (-1 🌽)!', '#7dd3fc');
+      return;
+    }
+
+    if (this.dairyState === 'milking') {
+      this.showFloatingNotice(cowX, cowY - 30, `🐄 Бурёнка жуёт... (${Math.ceil(this.dairyTimer)}с)`, '#7dd3fc');
+      return;
+    }
+
+    if (this.dairyState === 'ready') {
+      this.inventory.milk += 2;
+      this.statsMilkCollected += 2;
+      this.dairyState = 'idle';
+      this.updateInventoryHud();
+      this.playMooSound();
+      this.showFloatingNotice(cowX, cowY - 30, '🥛 +2 Кувшина Парного Молока!', '#7dd3fc');
+      this.checkMilestones();
+      return;
+    }
+  }
+
+  private playCluckSound(): void {
+    this.playTone(480, 'triangle', 0.08, 0.08);
+    setTimeout(() => this.playTone(620, 'triangle', 0.1, 0.09), 80);
+    setTimeout(() => this.playTone(380, 'triangle', 0.12, 0.08), 170);
+  }
+
+  private playMooSound(): void {
+    this.playTone(130, 'triangle', 0.45, 0.12);
+    setTimeout(() => this.playTone(115, 'sine', 0.55, 0.14), 200);
+  }
+
+  private playMillSound(): void {
+    this.playTone(220, 'sine', 0.25, 0.07);
+    setTimeout(() => this.playTone(260, 'sine', 0.25, 0.07), 100);
+    setTimeout(() => this.playTone(330, 'triangle', 0.3, 0.08), 220);
   }
 
   private playRatAlert(): void {

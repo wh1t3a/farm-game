@@ -36,6 +36,12 @@ export class Phase2 {
   private gateSignText: Phaser.GameObjects.Text | null = null;
   private cinematicContainer: Phaser.GameObjects.Container | null = null;
 
+  // Новые объекты производства Фазы 2
+  public chickenCoopText: Phaser.GameObjects.Text | null = null;
+  public millText: Phaser.GameObjects.Text | null = null;
+  public millBladesTween: Phaser.Tweens.Tween | null = null;
+  public dairyText: Phaser.GameObjects.Text | null = null;
+
   // Зоны и грядки
   private zones: FarmZone[] = [];
   private plots: Plot[] = [];
@@ -96,17 +102,70 @@ export class Phase2 {
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(5);
 
-    // Мельница декоративная на востоке
-    const mill = this.scene.add.rectangle(PHASE2_CONFIG.millX, PHASE2_CONFIG.millY, 70, 90, 0x475569).setDepth(3);
-    mill.setStrokeStyle(3, 0x1e293b);
-    this.scene.add.triangle(PHASE2_CONFIG.millX, 400, 1780, 430, 1860, 430, PHASE2_CONFIG.millX, 385, 0x854d0e).setDepth(4);
-    this.scene.add.text(PHASE2_CONFIG.millX, PHASE2_CONFIG.millY, '💨 МЕЛЬНИЦА\nФАЗЫ 2', {
+    // Ветряная мельница на востоке с вращающимися лопастями
+    const millX = PHASE2_CONFIG.millX;
+    const millY = PHASE2_CONFIG.millY;
+    this.scene.add.ellipse(millX, millY + 44, 76, 20, 0x000000, 0.3).setDepth(2);
+    const millBody = this.scene.add.rectangle(millX, millY + 5, 72, 85, 0x475569).setDepth(3);
+    millBody.setStrokeStyle(3, 0x1e293b);
+    this.scene.add.triangle(millX, millY - 55, millX - 45, millY - 25, millX + 45, millY - 25, millX, millY - 65, 0x854d0e).setDepth(4);
+
+    // Лопасти мельницы (вращающийся крест)
+    const bladeContainer = this.scene.add.container(millX, millY - 25).setDepth(5);
+    const b1 = this.scene.add.rectangle(0, 0, 10, 80, 0xd97706);
+    b1.setStrokeStyle(1, 0x78350f);
+    const b2 = this.scene.add.rectangle(0, 0, 80, 10, 0xd97706);
+    b2.setStrokeStyle(1, 0x78350f);
+    const bHub = this.scene.add.circle(0, 0, 7, 0x451a03);
+    bladeContainer.add([b1, b2, bHub]);
+    this.millBladesTween = this.scene.tweens.add({
+      targets: bladeContainer,
+      angle: 360,
+      duration: 3500,
+      repeat: -1,
+      ease: 'Linear',
+    });
+
+    this.millText = this.scene.add.text(millX, millY + 52, '💨 ВЕТРЯНАЯ МЕЛЬНИЦА\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '11px',
+      fontSize: '10px',
       color: '#cbd5e1',
       align: 'center',
       fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(5);
+      backgroundColor: '#0f172ab0',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5).setDepth(6);
+
+    // Курятник на лужайке Фазы 2
+    const coopX = PHASE2_CONFIG.chickenCoopX;
+    const coopY = PHASE2_CONFIG.chickenCoopY;
+    this.scene.add.ellipse(coopX, coopY + 28, 78, 20, 0x000000, 0.25).setDepth(2);
+    this.scene.add.image(coopX, coopY, 'sprout_chicken_house').setScale(1.75).setDepth(3);
+    this.chickenCoopText = this.scene.add.text(coopX, coopY + 44, '🐔 КУРЯТНИК\n[ПРОБЕЛ]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#fef08a',
+      align: 'center',
+      fontStyle: 'bold',
+      backgroundColor: '#0f172ab0',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5).setDepth(6);
+
+    // Загон и вывеска молочной фермы коровы на северо-востоке
+    const cowX = PHASE2_CONFIG.dairyCowX;
+    const cowY = PHASE2_CONFIG.dairyCowY;
+    this.scene.add.rectangle(cowX - 35, cowY + 10, 6, 20, 0x78350f).setDepth(2);
+    this.scene.add.rectangle(cowX + 35, cowY + 10, 6, 20, 0x78350f).setDepth(2);
+    this.scene.add.rectangle(cowX, cowY + 22, 76, 4, 0x92400e).setDepth(2);
+    this.dairyText = this.scene.add.text(cowX, cowY + 36, '🐄 МОЛОЧНАЯ ФЕРМА\n[ПРОБЕЛ]', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#7dd3fc',
+      align: 'center',
+      fontStyle: 'bold',
+      backgroundColor: '#0f172ab0',
+      padding: { x: 4, y: 2 },
+    }).setOrigin(0.5).setDepth(6);
 
     // Норы полевых крыс (угроза урожаю)
     const ratBurrow1 = this.scene.add.ellipse(PHASE2_CONFIG.burrow1X, PHASE2_CONFIG.burrow1Y, 46, 24, 0x18181b).setDepth(2);
@@ -342,7 +401,7 @@ export class Phase2 {
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    const sub = this.scene.add.text(0, 12, 'Восточные земли открываются! Откройте ворота за 1 🪙! [ПРОБЕЛ / ESC: пропуск]', {
+    const sub = this.scene.add.text(0, 12, `Восточные земли открываются! Откройте ворота за ${PHASE2_CONFIG.unlockCost} 🪙! [ПРОБЕЛ / ESC: пропуск]`, {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#e2e8f0',
@@ -378,7 +437,7 @@ export class Phase2 {
       notify.call(this.scene, 1440, 210, '🌽 Поля сладкой Кукурузы', '#facc15');
       notify.call(this.scene, 1440, 420, '🍉 Бахча сочных Арбузов', '#f43f5e');
       notify.call(this.scene, 1120, 500, '🐀 Норы полевых крыс (Берегите урожай!)', '#fb923c');
-      notify.call(this.scene, 960, 310, '🚪 Ворота: всего 1 🪙!', '#4ade80');
+      notify.call(this.scene, 960, 310, `🚪 Ворота: ${PHASE2_CONFIG.unlockCost} 🪙!`, '#4ade80');
     }
   }
 
@@ -399,7 +458,7 @@ export class Phase2 {
     if (onComplete) onComplete();
   }
 
-  // --- ПОКУПКА / ОТКРЫТИЕ ВОРОТ ФАЗЫ 2 ЗА 1 МОНЕТУ ---
+  // --- ПОКУПКА / ОТКРЫТИЕ ВОРОТ ФАЗЫ 2 ---
 
   public unlockGate(): void {
     this.unlocked = true;
@@ -416,22 +475,6 @@ export class Phase2 {
 
     if (this.gateSignText) {
       this.gateSignText.setText('🚪 ВОСТОЧНЫЕ УГОДЬЯ\n(Открыто)');
-    }
-
-    // Разблокируем зоны 5 и 6 и их грядки
-    for (const z of this.zones) {
-      z.unlocked = true;
-      z.fences.forEach((f) => f.destroy());
-      z.fences = [];
-      if (z.signContainer) {
-        z.signContainer.destroy();
-        z.signContainer = undefined;
-      }
-    }
-
-    for (const plot of this.plots) {
-      plot.unlocked = true;
-      (this.scene as any).updatePlotVisuals?.(plot);
     }
   }
 }
