@@ -112,21 +112,35 @@ export class Phase1 {
   public createPond(onFish: () => void): void {
     const { pondX, pondY } = PHASE1_LOCATIONS;
 
-    // Мягкая тень под прудом
-    this.scene.add.ellipse(pondX, pondY + 4, 126, 90, 0x000000, 0.2).setDepth(1);
+    // Единая структура пруда: берег и 4x3 тайловая сетка анимированной воды
+    const tileScale = 1.75;
+    const tilePx = 16 * tileScale; // 28px
+    const cols = 4;
+    const rows = 3;
+    const waterW = cols * tilePx; // 112px
+    const waterH = rows * tilePx; // 84px
 
-    // Водоём в палитре Sprout Lands: берег и чистая вода
-    this.scene.add.ellipse(pondX, pondY, 118, 82, 0x3d7068).setDepth(2);
-    this.scene.add.ellipse(pondX, pondY, 108, 72, 0x5299a9).setDepth(3);
+    this.scene.add.rectangle(pondX, pondY + 3, waterW + 14, waterH + 14, 0x000000, 0.2).setDepth(1);
+    this.scene.add.rectangle(pondX, pondY, waterW + 8, waterH + 8, 0x3d7068).setDepth(2);
 
-    // Анимированные блики воды
-    this.scene.add.sprite(pondX - 16, pondY - 4, 'sprout_water', 0).setScale(1.5).setDepth(4).setAlpha(0.8);
-    this.scene.add.sprite(pondX + 16, pondY + 8, 'sprout_water', 2).setScale(1.5).setDepth(4).setAlpha(0.8);
+    const startX = pondX - waterW / 2 + tilePx / 2;
+    const startY = pondY - waterH / 2 + tilePx / 2;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const wt = this.scene.add.sprite(
+          startX + c * tilePx,
+          startY + r * tilePx,
+          'sprout_water',
+          (c + r) % 4,
+        ).setScale(tileScale).setDepth(3);
+        wt.play('water_sparkle');
+      }
+    }
 
-    // Один аккуратный деревянный мостик для рыбалки
-    this.scene.add.image(pondX + 46, pondY, 'sprout_bridge_pier').setScale(1.3).setDepth(5);
+    // Один аккуратный деревянный мостик для рыбалки на правом берегу
+    this.scene.add.image(pondX + waterW / 2 + 4, pondY, 'sprout_bridge_pier').setScale(1.3).setDepth(5);
 
-    this.scene.add.text(pondX, pondY + 52, '🎣 ПРУД\n[ПРОБЕЛ]', {
+    this.scene.add.text(pondX, pondY + waterH / 2 + 16, '🎣 ПРУД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#67e8f9',

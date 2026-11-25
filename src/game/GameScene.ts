@@ -464,6 +464,14 @@ export class GameScene extends Phaser.Scene {
       frameRate: 3,
       repeat: -1,
     });
+
+    // Вода (64x16, 4 кадра анимации)
+    this.anims.create({
+      key: 'water_sparkle',
+      frames: this.anims.generateFrameNumbers('sprout_water', { start: 0, end: 3 }),
+      frameRate: 3,
+      repeat: -1,
+    });
   }
 
   private createFarmAnimals(): void {
