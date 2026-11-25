@@ -258,7 +258,7 @@ export class GameScene extends Phaser.Scene {
     this.isPaused = false;
     this.coins = INITIAL_COINS;
     this.waterCanLevel = 1;
-    this.water = this.getMaxWater();
+    this.water = INITIAL_WATER;
     this.speedLevel = 1;
     this.hasScarecrow = false;
     this.inventory = { carrot: 0, wheat: 0, strawberry: 0, pumpkin: 0, corn: 0, watermelon: 0 };

@@ -136,7 +136,7 @@ export interface PlotConfig {
 
 // --- СТАРТОВЫЕ РЕСУРСЫ ---
 export const INITIAL_COINS = 25;
-export const INITIAL_WATER = 3;
+export const INITIAL_WATER = 0; // На старте лейка пустая (0/3), чтобы обучение набору воды в колодце было осмысленным
 
 // --- ПРОКАЧКА: ЛЕЙКА ---
 export const WATER_CAPACITIES = [3, 5, 8, 12];
