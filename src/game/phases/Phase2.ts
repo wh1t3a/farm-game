@@ -67,13 +67,13 @@ export class Phase2 {
   // --- ЛАНДШАФТ И ДЕКОРАЦИИ ФАЗЫ 2 ---
 
   public createLandscape(onRefillWater: () => void): void {
-    // Центральное пахотное поле Фазы 2
-    const gardenP2 = this.scene.add.rectangle(1440, 340, 680, 480, 0x223c1f, 0.95);
-    gardenP2.setStrokeStyle(3, 0x3d6634);
-    gardenP2.setDepth(1);
+    // Тёмное пахотное поле Фазы 2 (тайловый грунт)
+    const dirtFieldP2 = this.scene.add.tileSprite(
+      1440, 340, 680, 480, 'sprout_tilled_dirt'
+    ).setDepth(1).setAlpha(0.85);
 
     // Дорожка от ворот в центр восточных земель
-    this.scene.add.rectangle(1200, 340, 480, 36, 0x5a4832, 0.6).setDepth(1);
+    const pathP2 = this.scene.add.tileSprite(1200, 340, 480, 36, 'sprout_paths').setDepth(2);
 
     // Дополнительный источник воды в Фазе 2 (Бочка с дождевой водой)
     const { wellX, wellY } = PHASE2_CONFIG;

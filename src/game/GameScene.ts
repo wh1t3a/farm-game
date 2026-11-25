@@ -241,10 +241,9 @@ export class GameScene extends Phaser.Scene {
       frameHeight: 16,
     });
 
-    // Здания и окружение
+    // Здания и окружение (без chest — нет механики открытия)
     this.load.image('sprout_house', 'assets/sprout/tilesets/house.png');
     this.load.image('sprout_shed', 'assets/sprout/objects/shed.png');
-    this.load.image('sprout_chest', 'assets/sprout/objects/chest.png');
     this.load.image('sprout_nature', 'assets/sprout/objects/nature.png');
     this.load.image('sprout_grass', 'assets/sprout/tilesets/grass.png');
     this.load.image('sprout_paths', 'assets/sprout/objects/paths.png');
@@ -441,39 +440,21 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    // Курочка
+    // Курочка (64x32, 16x16 frames = 4 cols × 2 rows)
+    // Используем только ряд 0 (кадры 0-3) — надёжная анимация клевания
     this.anims.create({
       key: 'chicken_peck',
       frames: this.anims.generateFrameNumbers('sprout_chicken', { start: 0, end: 3 }),
       frameRate: 4,
       repeat: -1,
     });
-    this.anims.create({
-      key: 'chicken_sleep',
-      frames: this.anims.generateFrameNumbers('sprout_chicken', { start: 4, end: 7 }),
-      frameRate: 2,
-      repeat: -1,
-    });
 
-    // Корова
+    // Корова (96x64, 32x32 frames = 3 cols × 2 rows)
+    // Ряд 0 (кадры 0-2): жуёт
     this.anims.create({
       key: 'cow_chew',
       frames: this.anims.generateFrameNumbers('sprout_cow', { start: 0, end: 2 }),
       frameRate: 3,
-      repeat: -1,
-    });
-    this.anims.create({
-      key: 'cow_walk',
-      frames: this.anims.generateFrameNumbers('sprout_cow', { start: 3, end: 5 }),
-      frameRate: 4,
-      repeat: -1,
-    });
-
-    // Вода
-    this.anims.create({
-      key: 'water_sparkle',
-      frames: this.anims.generateFrameNumbers('sprout_water', { start: 0, end: 3 }),
-      frameRate: 4,
       repeat: -1,
     });
   }
@@ -482,15 +463,15 @@ export class GameScene extends Phaser.Scene {
     this.farmAnimals.forEach((a) => a.destroy());
     this.farmAnimals = [];
 
-    // Курочки в Фазе 1 возле склада и двора
+    // Курочки на ферме — только анимация клевания (ряд 0, кадры 0-3)
     const chicken1 = this.add.sprite(220, 210, 'sprout_chicken', 0).setScale(2).setDepth(15);
     chicken1.play('chicken_peck');
 
-    const chicken2 = this.add.sprite(750, 250, 'sprout_chicken', 0).setScale(2).setDepth(15);
+    const chicken2 = this.add.sprite(750, 250, 'sprout_chicken', 0).setScale(2).setDepth(15).setFlipX(true);
     chicken2.play('chicken_peck');
 
-    const chicken3 = this.add.sprite(820, 520, 'sprout_chicken', 4).setScale(2).setDepth(15);
-    chicken3.play('chicken_sleep');
+    const chicken3 = this.add.sprite(820, 520, 'sprout_chicken', 0).setScale(2).setDepth(15);
+    chicken3.play('chicken_peck');
 
     // Корова в восточных угодьях (Фаза 2)
     const cow1 = this.add.sprite(1680, 200, 'sprout_cow', 0).setScale(2).setDepth(15);
