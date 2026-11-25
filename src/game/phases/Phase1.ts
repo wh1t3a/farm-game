@@ -133,10 +133,27 @@ export class Phase1 {
     const pondBg = this.scene.add.ellipse(pondX, pondY, 110, 80, 0x0369a1).setDepth(2);
     pondBg.setStrokeStyle(4, 0x38bdf8);
 
+    // Анимированные брызги/блики воды
+    try {
+      const waterAnim1 = this.scene.add.sprite(pondX - 16, pondY, 'sprout_water', 0).setScale(1.8).setDepth(3);
+      waterAnim1.play('water_sparkle');
+      const waterAnim2 = this.scene.add.sprite(pondX + 16, pondY, 'sprout_water', 2).setScale(1.8).setDepth(3);
+      waterAnim2.play('water_sparkle');
+    } catch {
+      // fallback
+    }
+
+    // Деревянный помост мостика
+    try {
+      this.scene.add.image(pondX + 38, pondY + 12, 'sprout_bridge').setScale(1.2).setDepth(4);
+    } catch {
+      // fallback
+    }
+
     // Кувшинки
-    this.scene.add.circle(pondX - 25, pondY - 15, 8, 0x15803d).setDepth(3);
-    this.scene.add.circle(pondX + 22, pondY + 12, 10, 0x166534).setDepth(3);
-    this.scene.add.circle(pondX + 26, pondY + 10, 3, 0xf472b6).setDepth(4);
+    this.scene.add.circle(pondX - 25, pondY - 15, 8, 0x15803d).setDepth(4);
+    this.scene.add.circle(pondX + 22, pondY + 12, 10, 0x166534).setDepth(4);
+    this.scene.add.circle(pondX + 26, pondY + 10, 3, 0xf472b6).setDepth(5);
 
     this.scene.add.text(pondX, pondY + 50, '🎣 ПРУД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
@@ -171,29 +188,16 @@ export class Phase1 {
     const { barnX, barnY } = PHASE1_LOCATIONS;
     this.scene.add.ellipse(barnX, barnY + 52, 116, 24, 0x000000, 0.35).setDepth(2);
 
-    // Здание Амбара (Склад)
-    this.barn = this.scene.add.rectangle(barnX, barnY, 115, 95, 0x991b1b);
-    this.barn.setStrokeStyle(3, 0x5f1111);
-    this.barn.setDepth(3);
-
-    const roof = this.scene.add.rectangle(barnX, barnY - 52, 128, 26, 0xb91c1c);
-    roof.setDepth(4);
-
-    // Ворота амбара
-    this.scene.add.rectangle(barnX, barnY + 16, 44, 56, 0x5f1111).setDepth(4);
-    this.scene.add.rectangle(barnX - 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
-    this.scene.add.rectangle(barnX + 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
-
-    // Ручки дверей
-    this.scene.add.circle(barnX - 3, barnY + 16, 2, 0xfacc15).setDepth(6);
-    this.scene.add.circle(barnX + 3, barnY + 16, 2, 0xfacc15).setDepth(6);
-
-    // Чердачное окошко
-    this.scene.add.rectangle(barnX, barnY - 22, 20, 20, 0x451a03).setDepth(4);
-    this.scene.add.rectangle(barnX, barnY - 22, 16, 16, 0xfef08a, 0.9).setDepth(5);
+    // Здание Склада (деревянный дом Sprout Lands)
+    try {
+      this.scene.add.image(barnX, barnY - 6, 'sprout_house').setScale(1.45).setDepth(4);
+      this.scene.add.image(barnX - 68, barnY + 28, 'sprout_chest').setScale(1.3).setDepth(4);
+    } catch {
+      this.barn = this.scene.add.rectangle(barnX, barnY, 115, 95, 0x991b1b).setDepth(3);
+    }
 
     // Чистая, понятная вывеска склада без перекрытия
-    this.scene.add.text(barnX, barnY - 52, '🏪 СКЛАД\n[ПРОБЕЛ]', {
+    this.scene.add.text(barnX, barnY - 58, '🏪 СКЛАД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#fef08a',
@@ -206,16 +210,16 @@ export class Phase1 {
     const { shopX, shopY } = PHASE1_LOCATIONS;
     this.scene.add.ellipse(shopX, shopY + 44, 110, 20, 0x000000, 0.35).setDepth(2);
 
-    this.shop = this.scene.add.rectangle(shopX, shopY, 110, 85, 0x1e3a8a);
-    this.shop.setStrokeStyle(3, 0x172554);
-    this.shop.setDepth(3);
+    // Мастерская (Shed Sprout Lands)
+    try {
+      this.scene.add.image(shopX, shopY - 4, 'sprout_shed').setScale(2.1).setDepth(4);
+    } catch {
+      this.shop = this.scene.add.rectangle(shopX, shopY, 110, 85, 0x1e3a8a).setDepth(3);
+    }
 
-    const roof = this.scene.add.rectangle(shopX, shopY - 46, 122, 22, 0x2563eb);
-    roof.setDepth(4);
-
-    this.scene.add.text(shopX, shopY, '🛠️ ЛАВКА\nУЛУЧШЕНИЙ\n[ПРОБЕЛ]', {
+    this.scene.add.text(shopX, shopY - 54, '🛠️ ЛАВКА УЛУЧШЕНИЙ\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '12px',
+      fontSize: '11px',
       color: '#bfdbfe',
       fontStyle: 'bold',
       align: 'center',
@@ -245,6 +249,16 @@ export class Phase1 {
         fontFamily: 'system-ui, sans-serif',
         fontSize: '32px',
       }).setOrigin(0.5).setDepth(6);
+
+      let cropSprite: Phaser.GameObjects.Sprite | undefined;
+      try {
+        cropSprite = this.scene.add.sprite(p.x, p.y - 6, 'sprout_plants', 0)
+          .setScale(2.5)
+          .setDepth(6)
+          .setVisible(false);
+      } catch {
+        // fallback
+      }
 
       const pestContainer = this.scene.add.container(p.x, p.y - 32).setDepth(8).setVisible(false);
       const pestText = this.scene.add.text(0, 0, '🦅', {
@@ -291,6 +305,7 @@ export class Phase1 {
         maxPestTimer: 8.0,
         border,
         soil,
+        cropSprite,
         plantIcon,
         statusText,
         barBg,

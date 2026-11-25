@@ -105,6 +105,8 @@ export interface Plot {
   // Графические объекты
   border: Phaser.GameObjects.Rectangle;
   soil: Phaser.GameObjects.Rectangle;
+  dirtTile?: Phaser.GameObjects.TileSprite;
+  cropSprite?: Phaser.GameObjects.Sprite;
   plantIcon: Phaser.GameObjects.Text;
   statusText: Phaser.GameObjects.Text;
   barBg: Phaser.GameObjects.Rectangle;

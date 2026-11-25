@@ -210,6 +210,16 @@ export class Phase2 {
         fontSize: '32px',
       }).setOrigin(0.5).setDepth(6);
 
+      let cropSprite: Phaser.GameObjects.Sprite | undefined;
+      try {
+        cropSprite = this.scene.add.sprite(p.x, p.y - 6, 'sprout_plants', 0)
+          .setScale(2.5)
+          .setDepth(6)
+          .setVisible(false);
+      } catch {
+        // fallback
+      }
+
       const pestContainer = this.scene.add.container(p.x, p.y - 32).setDepth(8).setVisible(false);
       const pestText = this.scene.add.text(0, 0, '🐀', {
         fontFamily: 'system-ui, sans-serif',
@@ -255,6 +265,7 @@ export class Phase2 {
         maxPestTimer: 8.0,
         border,
         soil,
+        cropSprite,
         plantIcon,
         statusText,
         barBg,

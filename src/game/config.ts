@@ -8,6 +8,11 @@ export function createGame(parent: string): Phaser.Game {
     width: 960,
     height: 640,
     backgroundColor: '#1e381b', // Цвет свежего газона фермы
+    render: {
+      pixelArt: true,
+      antialias: false,
+      roundPixels: true,
+    },
     scene: [GameScene],
     scale: {
       mode: Phaser.Scale.FIT,

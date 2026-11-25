@@ -61,6 +61,10 @@ export class GameScene extends Phaser.Scene {
 
   // Персонаж
   private playerContainer!: Phaser.GameObjects.Container;
+  private playerSprite!: Phaser.GameObjects.Sprite;
+  private playerFacing: 'up' | 'down' | 'left' | 'right' = 'down';
+  private farmAnimals: Phaser.GameObjects.Sprite[] = [];
+  private workerSprite: Phaser.GameObjects.Sprite | null = null;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'up' | 'down' | 'left' | 'right', Phaser.Input.Keyboard.Key>;
   private actionKeys!: Phaser.Input.Keyboard.Key[];
@@ -194,9 +198,66 @@ export class GameScene extends Phaser.Scene {
     super('GameScene');
   }
 
+  preload(): void {
+    // Персонаж и действия
+    this.load.spritesheet('sprout_player', 'assets/sprout/characters/player.png', {
+      frameWidth: 48,
+      frameHeight: 48,
+    });
+    this.load.spritesheet('sprout_actions', 'assets/sprout/characters/player_actions.png', {
+      frameWidth: 48,
+      frameHeight: 48,
+    });
+
+    // Животные
+    this.load.spritesheet('sprout_chicken', 'assets/sprout/animals/chicken.png', {
+      frameWidth: 16,
+      frameHeight: 16,
+    });
+    this.load.spritesheet('sprout_cow', 'assets/sprout/animals/cow.png', {
+      frameWidth: 32,
+      frameHeight: 32,
+    });
+
+    // Культуры и растения (16x16, 6 колонок x 2 ряда)
+    this.load.spritesheet('sprout_plants', 'assets/sprout/objects/plants.png', {
+      frameWidth: 16,
+      frameHeight: 16,
+    });
+
+    // Вода (16x16, 4 кадра анимации)
+    this.load.spritesheet('sprout_water', 'assets/sprout/tilesets/water.png', {
+      frameWidth: 16,
+      frameHeight: 16,
+    });
+
+    // Инструменты и заборы
+    this.load.spritesheet('sprout_tools', 'assets/sprout/objects/tools.png', {
+      frameWidth: 16,
+      frameHeight: 16,
+    });
+    this.load.spritesheet('sprout_fences', 'assets/sprout/tilesets/fences.png', {
+      frameWidth: 16,
+      frameHeight: 16,
+    });
+
+    // Здания и окружение
+    this.load.image('sprout_house', 'assets/sprout/tilesets/house.png');
+    this.load.image('sprout_shed', 'assets/sprout/objects/shed.png');
+    this.load.image('sprout_chest', 'assets/sprout/objects/chest.png');
+    this.load.image('sprout_nature', 'assets/sprout/objects/nature.png');
+    this.load.image('sprout_grass', 'assets/sprout/tilesets/grass.png');
+    this.load.image('sprout_paths', 'assets/sprout/objects/paths.png');
+    this.load.image('sprout_tilled_dirt', 'assets/sprout/tilesets/tilled_dirt.png');
+    this.load.image('sprout_bridge', 'assets/sprout/objects/bridge.png');
+    this.load.image('sprout_hills', 'assets/sprout/tilesets/hills.png');
+  }
+
   create(): void {
     const { width, height } = this.scale;
     this.resetState();
+
+    this.createAnims();
 
     this.phase1 = new Phase1(this);
     this.phase2 = new Phase2(this);
@@ -228,6 +289,7 @@ export class GameScene extends Phaser.Scene {
     this.plots = [...p1.plots, ...p2.plots];
 
     this.createPlayer();
+    this.createFarmAnimals();
 
     this.createHUD(width);
     this.createControls();
@@ -350,6 +412,93 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  private createAnims(): void {
+    if (this.anims.exists('player_walk_down')) return;
+
+    // Игрок: ходьба вниз, вверх, влево, вправо
+    this.anims.create({
+      key: 'player_walk_down',
+      frames: this.anims.generateFrameNumbers('sprout_player', { start: 0, end: 3 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'player_walk_up',
+      frames: this.anims.generateFrameNumbers('sprout_player', { start: 4, end: 7 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'player_walk_left',
+      frames: this.anims.generateFrameNumbers('sprout_player', { start: 8, end: 11 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'player_walk_right',
+      frames: this.anims.generateFrameNumbers('sprout_player', { start: 12, end: 15 }),
+      frameRate: 8,
+      repeat: -1,
+    });
+
+    // Курочка
+    this.anims.create({
+      key: 'chicken_peck',
+      frames: this.anims.generateFrameNumbers('sprout_chicken', { start: 0, end: 3 }),
+      frameRate: 4,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'chicken_sleep',
+      frames: this.anims.generateFrameNumbers('sprout_chicken', { start: 4, end: 7 }),
+      frameRate: 2,
+      repeat: -1,
+    });
+
+    // Корова
+    this.anims.create({
+      key: 'cow_chew',
+      frames: this.anims.generateFrameNumbers('sprout_cow', { start: 0, end: 2 }),
+      frameRate: 3,
+      repeat: -1,
+    });
+    this.anims.create({
+      key: 'cow_walk',
+      frames: this.anims.generateFrameNumbers('sprout_cow', { start: 3, end: 5 }),
+      frameRate: 4,
+      repeat: -1,
+    });
+
+    // Вода
+    this.anims.create({
+      key: 'water_sparkle',
+      frames: this.anims.generateFrameNumbers('sprout_water', { start: 0, end: 3 }),
+      frameRate: 4,
+      repeat: -1,
+    });
+  }
+
+  private createFarmAnimals(): void {
+    this.farmAnimals.forEach((a) => a.destroy());
+    this.farmAnimals = [];
+
+    // Курочки в Фазе 1 возле склада и двора
+    const chicken1 = this.add.sprite(220, 210, 'sprout_chicken', 0).setScale(2).setDepth(15);
+    chicken1.play('chicken_peck');
+
+    const chicken2 = this.add.sprite(750, 250, 'sprout_chicken', 0).setScale(2).setDepth(15);
+    chicken2.play('chicken_peck');
+
+    const chicken3 = this.add.sprite(820, 520, 'sprout_chicken', 4).setScale(2).setDepth(15);
+    chicken3.play('chicken_sleep');
+
+    // Корова в восточных угодьях (Фаза 2)
+    const cow1 = this.add.sprite(1680, 200, 'sprout_cow', 0).setScale(2).setDepth(15);
+    cow1.play('cow_chew');
+
+    this.farmAnimals.push(chicken1, chicken2, chicken3, cow1);
+  }
+
   private createPlayer(): void {
     const startX = 260;
     const startY = 230;
@@ -357,15 +506,10 @@ export class GameScene extends Phaser.Scene {
     this.playerContainer = this.add.container(startX, startY);
     this.playerContainer.setDepth(20);
 
-    const shadow = this.add.ellipse(0, 18, 34, 12, 0x000000, 0.4);
-    const body = this.add.rectangle(0, 4, 24, 28, 0x2563eb);
-    body.setStrokeStyle(2, 0x1d4ed8);
+    const shadow = this.add.ellipse(0, 16, 26, 10, 0x000000, 0.35);
+    this.playerSprite = this.add.sprite(0, 0, 'sprout_player', 0).setScale(1.75);
 
-    const head = this.add.circle(0, -14, 12, 0xfde047);
-    const hatBrim = this.add.ellipse(0, -22, 40, 12, 0xd97706);
-    const hatTop = this.add.rectangle(0, -28, 18, 10, 0xb45309);
-
-    this.playerContainer.add([shadow, body, head, hatBrim, hatTop]);
+    this.playerContainer.add([shadow, this.playerSprite]);
 
     // Контекстная подсказка над головой
     this.promptBox = this.add.container(startX, startY - 56);
@@ -1224,12 +1368,8 @@ export class GameScene extends Phaser.Scene {
 
     this.workerContainer = this.add.container(startX, startY).setDepth(20);
 
-    const shadow = this.add.ellipse(0, 16, 30, 10, 0x000000, 0.35);
-    const body = this.add.rectangle(0, 4, 22, 26, 0x15803d);
-    body.setStrokeStyle(2, 0x166534);
-
-    const head = this.add.circle(0, -14, 11, 0xfde047);
-    const cap = this.add.rectangle(0, -22, 22, 8, 0x0284c7);
+    const shadow = this.add.ellipse(0, 16, 26, 10, 0x000000, 0.35);
+    this.workerSprite = this.add.sprite(0, 0, 'sprout_player', 0).setScale(1.6).setTint(0x86efac);
 
     const badge = this.add.text(0, -32, '🧑‍🌾 Помощник', {
       fontFamily: 'system-ui, sans-serif',
@@ -1250,7 +1390,7 @@ export class GameScene extends Phaser.Scene {
       padding: { x: 3, y: 1 },
     }).setOrigin(0.5);
 
-    this.workerContainer.add([shadow, body, head, cap, badge, barBg, this.workerBarFill, this.workerStatusText]);
+    this.workerContainer.add([shadow, this.workerSprite, badge, barBg, this.workerBarFill, this.workerStatusText]);
     this.workerContainer.setSize(38, 48);
     this.workerContainer.setInteractive({ useHandCursor: true });
     this.workerContainer.on('pointerdown', () => this.treatWorker());
@@ -1583,13 +1723,44 @@ export class GameScene extends Phaser.Scene {
       const len = Math.hypot(dx, dy);
       this.playerContainer.x += (dx / len) * currentSpeed * seconds;
       this.playerContainer.y += (dy / len) * currentSpeed * seconds;
-      this.playerContainer.rotation = Math.sin(Date.now() / 90) * 0.08;
+
+      // Направленная покадровая анимация ходьбы
+      if (this.playerSprite) {
+        if (Math.abs(dx) > Math.abs(dy)) {
+          if (dx > 0) {
+            this.playerSprite.play('player_walk_right', true);
+            this.playerFacing = 'right';
+          } else {
+            this.playerSprite.play('player_walk_left', true);
+            this.playerFacing = 'left';
+          }
+        } else {
+          if (dy > 0) {
+            this.playerSprite.play('player_walk_down', true);
+            this.playerFacing = 'down';
+          } else {
+            this.playerSprite.play('player_walk_up', true);
+            this.playerFacing = 'up';
+          }
+        }
+      }
 
       if (this.tutorialManager) {
         this.tutorialManager.onPlayerMove(this.playerContainer.x, this.playerContainer.y);
       }
     } else {
-      this.playerContainer.rotation = 0;
+      if (this.playerSprite) {
+        this.playerSprite.anims.stop();
+        if (this.playerFacing === 'up') {
+          this.playerSprite.setFrame(4);
+        } else if (this.playerFacing === 'left') {
+          this.playerSprite.setFrame(8);
+        } else if (this.playerFacing === 'right') {
+          this.playerSprite.setFrame(12);
+        } else {
+          this.playerSprite.setFrame(0);
+        }
+      }
     }
 
     // Ограничение перемещения (до открытия ворот Фазы 2 фермер не может пройти на восток)
@@ -1677,10 +1848,19 @@ export class GameScene extends Phaser.Scene {
           plot.barFill.width = 90 * plot.growthProgress;
           plot.barFill.setFillStyle(plot.isWatered ? 0x22c55e : 0xeab308);
 
-          if (plot.growthProgress < 0.5) {
-            plot.plantIcon.setText('🌱');
+          // Обновляем визуальную стадию роста ростка/растения
+          const isRow0 = (plot.cropType === 'carrot' || plot.cropType === 'wheat' || plot.cropType === 'corn');
+          const baseOffset = isRow0 ? 0 : 6;
+          const stage = Math.min(4, Math.floor(plot.growthProgress * 4));
+          if (plot.cropSprite) {
+            plot.cropSprite.setFrame(baseOffset + stage).setVisible(true);
+            plot.plantIcon.setText('');
           } else {
-            plot.plantIcon.setText('🌿');
+            if (plot.growthProgress < 0.5) {
+              plot.plantIcon.setText('🌱');
+            } else {
+              plot.plantIcon.setText('🌿');
+            }
           }
         }
       }
@@ -1755,6 +1935,7 @@ export class GameScene extends Phaser.Scene {
       plot.border.setVisible(false);
       plot.soil.setVisible(false);
       plot.plantIcon.setVisible(false);
+      if (plot.cropSprite) plot.cropSprite.setVisible(false);
       plot.pestContainer.setVisible(false);
       plot.statusText.setVisible(false);
       plot.barBg.setVisible(false);
@@ -1764,15 +1945,17 @@ export class GameScene extends Phaser.Scene {
 
     plot.border.setVisible(true);
     plot.soil.setVisible(true);
-    plot.plantIcon.setVisible(true);
     plot.statusText.setVisible(true);
 
     const info = CROPS[plot.cropType];
+    const isRow0 = (plot.cropType === 'carrot' || plot.cropType === 'wheat' || plot.cropType === 'corn');
+    const baseOffset = isRow0 ? 0 : 6;
 
     switch (plot.state) {
       case 'empty':
         plot.soil.setFillStyle(0x623d1e);
         plot.plantIcon.setText('');
+        if (plot.cropSprite) plot.cropSprite.setVisible(false);
         plot.pestContainer.setVisible(false);
         plot.statusText.setText(`${info.name} (пусто)`);
         plot.statusText.setColor('#cbd5e1');
@@ -1782,7 +1965,12 @@ export class GameScene extends Phaser.Scene {
 
       case 'seeded':
         plot.soil.setFillStyle(0x623d1e);
-        plot.plantIcon.setText('🌱');
+        plot.plantIcon.setText('');
+        if (plot.cropSprite) {
+          plot.cropSprite.setFrame(baseOffset).setVisible(true);
+        } else {
+          plot.plantIcon.setText('🌱').setVisible(true);
+        }
         plot.pestContainer.setVisible(false);
         plot.statusText.setText('Сухо (полей)');
         plot.statusText.setColor('#fbbf24');
@@ -1790,6 +1978,11 @@ export class GameScene extends Phaser.Scene {
 
       case 'growing':
         plot.soil.setFillStyle(0x351f0f);
+        plot.plantIcon.setText('');
+        if (plot.cropSprite) {
+          const stage = Math.min(4, Math.floor(plot.growthProgress * 4));
+          plot.cropSprite.setFrame(baseOffset + stage).setVisible(true);
+        }
         plot.pestContainer.setVisible(false);
         plot.statusText.setText('Растёт 💧');
         plot.statusText.setColor('#4ade80');
@@ -1797,7 +1990,12 @@ export class GameScene extends Phaser.Scene {
 
       case 'ready':
         plot.soil.setFillStyle(0x432616);
-        plot.plantIcon.setText(info.icon);
+        plot.plantIcon.setText('');
+        if (plot.cropSprite) {
+          plot.cropSprite.setFrame(baseOffset + 5).setVisible(true);
+        } else {
+          plot.plantIcon.setText(info.icon).setVisible(true);
+        }
         plot.pestContainer.setVisible(false);
         plot.statusText.setText('Спелый! Собери');
         plot.statusText.setColor('#facc15');
@@ -1812,7 +2010,8 @@ export class GameScene extends Phaser.Scene {
 
       case 'withered':
         plot.soil.setFillStyle(0x27272a);
-        plot.plantIcon.setText('🥀');
+        if (plot.cropSprite) plot.cropSprite.setVisible(false);
+        plot.plantIcon.setText('🥀').setVisible(true);
         plot.pestContainer.setVisible(false);
         const isRatPlot = plot.zoneId === 5 || plot.zoneId === 6;
         plot.statusText.setText(isRatPlot ? 'Сгрызено (расчистить)' : 'Склёвано (расчистить)');
