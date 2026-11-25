@@ -244,17 +244,13 @@ export class GameScene extends Phaser.Scene {
     // Здания и окружение (без chest — сундук исключен)
     this.load.image('sprout_grass_tile', 'assets/sprout/tilesets/grass_tile.png');
     this.load.image('sprout_dirt_tile', 'assets/sprout/tilesets/dirt_tile.png');
+    this.load.image('sprout_barn', 'assets/sprout/tilesets/barn_assembled.png');
+    this.load.image('sprout_shop', 'assets/sprout/tilesets/shop_assembled.png');
+    this.load.image('sprout_bridge_pier', 'assets/sprout/objects/bridge_pier.png');
     this.load.image('sprout_tree1', 'assets/sprout/objects/tree1.png');
     this.load.image('sprout_tree2', 'assets/sprout/objects/tree2.png');
     this.load.image('sprout_flower1', 'assets/sprout/objects/flower1.png');
-    this.load.image('sprout_house', 'assets/sprout/tilesets/house.png');
-    this.load.image('sprout_shed', 'assets/sprout/objects/shed.png');
-    this.load.image('sprout_nature', 'assets/sprout/objects/nature.png');
-    this.load.image('sprout_grass', 'assets/sprout/tilesets/grass.png');
     this.load.image('sprout_paths', 'assets/sprout/objects/paths.png');
-    this.load.image('sprout_tilled_dirt', 'assets/sprout/tilesets/tilled_dirt.png');
-    this.load.image('sprout_bridge', 'assets/sprout/objects/bridge.png');
-    this.load.image('sprout_hills', 'assets/sprout/tilesets/hills.png');
   }
 
   create(): void {
@@ -471,18 +467,43 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createFarmAnimals(): void {
-    this.farmAnimals.forEach((a) => a.destroy());
+    this.farmAnimals.forEach((a) => {
+      this.tweens.killTweensOf(a);
+      a.destroy();
+    });
     this.farmAnimals = [];
 
-    // Курочки на ферме — без пустых кадров (никогда не исчезают!)
-    const chicken1 = this.add.sprite(220, 210, 'sprout_chicken', 4).setScale(2).setDepth(15);
+    // Курочка 1: гуляет взад-вперёд около поля
+    const chicken1 = this.add.sprite(195, 225, 'sprout_chicken', 4).setScale(2).setDepth(15);
     chicken1.play('chicken_walk');
+    this.tweens.add({
+      targets: chicken1,
+      x: 255,
+      duration: 2600,
+      ease: 'Linear',
+      yoyo: true,
+      repeat: -1,
+      onYoyo: () => chicken1.setFlipX(true),
+      onRepeat: () => chicken1.setFlipX(false),
+    });
 
-    const chicken2 = this.add.sprite(750, 250, 'sprout_chicken', 0).setScale(2).setDepth(15).setFlipX(true);
+    // Курочка 2: клюёт на месте у склада
+    const chicken2 = this.add.sprite(760, 245, 'sprout_chicken', 0).setScale(2).setDepth(15).setFlipX(true);
     chicken2.play('chicken_peck');
 
-    const chicken3 = this.add.sprite(820, 520, 'sprout_chicken', 4).setScale(2).setDepth(15);
+    // Курочка 3: прогуливается около лавки
+    const chicken3 = this.add.sprite(775, 530, 'sprout_chicken', 4).setScale(2).setDepth(15);
     chicken3.play('chicken_walk');
+    this.tweens.add({
+      targets: chicken3,
+      x: 845,
+      duration: 3000,
+      ease: 'Linear',
+      yoyo: true,
+      repeat: -1,
+      onYoyo: () => chicken3.setFlipX(true),
+      onRepeat: () => chicken3.setFlipX(false),
+    });
 
     // Корова в восточных угодьях (Фаза 2)
     const cow1 = this.add.sprite(1680, 200, 'sprout_cow', 0).setScale(2).setDepth(15);

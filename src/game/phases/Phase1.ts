@@ -69,19 +69,15 @@ export class Phase1 {
       this.scene.add.sprite(x, 92, 'sprout_fences', 0).setScale(2).setDepth(2);
     }
 
-    // Декоративные пиксель-арт деревья из пака Sprout Lands
-    this.createTree(75, 140, 1);
-    this.createTree(135, 120, 2);
-    this.createTree(720, 130, 1);
-    this.createTree(790, 140, 2);
-    this.createTree(880, 100, 1);
-    this.createTree(920, 560, 2);
+    // Декоративные пиксель-арт деревья (равномерно распределены, без скоплений)
+    this.createTree(75, 145, 1);
+    this.createTree(755, 130, 2);
+    this.createTree(915, 575, 1);
 
     // Полянки полевых цветов
-    this.scene.add.image(180, 160, 'sprout_flower1').setScale(1.5).setDepth(2);
-    this.scene.add.image(240, 390, 'sprout_flower1').setScale(1.5).setDepth(2);
-    this.scene.add.image(740, 380, 'sprout_flower1').setScale(1.5).setDepth(2);
-    this.scene.add.image(770, 540, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(155, 365, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(745, 360, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(240, 570, 'sprout_flower1').setScale(1.5).setDepth(2);
   }
 
   public createTree(x: number, y: number, variant: 1 | 2 = 1): void {
@@ -127,8 +123,8 @@ export class Phase1 {
     this.scene.add.sprite(pondX - 16, pondY - 4, 'sprout_water', 0).setScale(1.5).setDepth(4).setAlpha(0.8);
     this.scene.add.sprite(pondX + 16, pondY + 8, 'sprout_water', 2).setScale(1.5).setDepth(4).setAlpha(0.8);
 
-    // Деревянный помост/мостик для рыбалки
-    this.scene.add.image(pondX + 44, pondY + 8, 'sprout_bridge').setScale(1.1).setDepth(5);
+    // Один аккуратный деревянный мостик для рыбалки
+    this.scene.add.image(pondX + 46, pondY, 'sprout_bridge_pier').setScale(1.3).setDepth(5);
 
     this.scene.add.text(pondX, pondY + 52, '🎣 ПРУД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
@@ -163,13 +159,13 @@ export class Phase1 {
     const { barnX, barnY } = PHASE1_LOCATIONS;
 
     // Тень под зданием
-    this.scene.add.ellipse(barnX, barnY + 48, 140, 24, 0x000000, 0.3).setDepth(2);
+    this.scene.add.ellipse(barnX, barnY + 46, 120, 20, 0x000000, 0.3).setDepth(2);
 
-    // Здание Склада (деревянный дом Sprout Lands — 112x80)
-    this.scene.add.image(barnX, barnY, 'sprout_house').setScale(1.5).setDepth(4);
+    // Здание Склада (собрано из тайлов крыши, стен, окна и двери Wooden House)
+    this.scene.add.image(barnX, barnY, 'sprout_barn').setScale(1.75).setDepth(4);
 
-    // Вывеска склада (без сундука)
-    this.scene.add.text(barnX, barnY - 68, '🏪 СКЛАД\n[ПРОБЕЛ]', {
+    // Вывеска склада
+    this.scene.add.text(barnX, barnY - 62, '🏪 СКЛАД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#fef08a',
@@ -182,13 +178,13 @@ export class Phase1 {
     const { shopX, shopY } = PHASE1_LOCATIONS;
 
     // Тень под зданием
-    this.scene.add.ellipse(shopX, shopY + 44, 120, 22, 0x000000, 0.3).setDepth(2);
+    this.scene.add.ellipse(shopX, shopY + 42, 96, 18, 0x000000, 0.3).setDepth(2);
 
-    // Лавка улучшений: аккуратный деревянный домик мастерской Sprout Lands
-    this.scene.add.image(shopX, shopY - 4, 'sprout_house').setScale(1.25).setDepth(4);
+    // Лавка улучшений (собрана из тайлов крыши, стен и открытой двери)
+    this.scene.add.image(shopX, shopY - 2, 'sprout_shop').setScale(1.65).setDepth(4);
 
     // Герб с инструментами над входом
-    this.scene.add.sprite(shopX, shopY - 14, 'sprout_tools', 0).setScale(1.8).setDepth(5);
+    this.scene.add.sprite(shopX, shopY - 12, 'sprout_tools', 0).setScale(1.6).setDepth(5);
 
     // Вывеска лавки
     this.scene.add.text(shopX, shopY - 60, '🛠️ ЛАВКА УЛУЧШЕНИЙ\n[ПРОБЕЛ]', {
