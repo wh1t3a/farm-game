@@ -127,14 +127,17 @@ export class Phase2 {
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(3);
 
-    // Деревья на востоке из пака Sprout Lands
+    // Деревья и редкие природные объекты на востоке
     this.createTree(1050, 140, 1);
     this.createTree(1740, 130, 2);
     this.createTree(1860, 560, 1);
+    this.scene.add.image(1035, 575, 'sprout_bush1').setScale(1.8).setDepth(2);
+    this.scene.add.image(1760, 585, 'sprout_stone1').setScale(1.6).setDepth(2);
   }
 
   private createTree(x: number, y: number, variant: 1 | 2 = 1): void {
-    this.scene.add.ellipse(x, y + 36, 44, 14, 0x000000, 0.25).setDepth(2);
+    const shadowW = variant === 2 ? 40 : 28;
+    this.scene.add.ellipse(x, y + 26, shadowW, 12, 0x000000, 0.25).setDepth(2);
     const treeKey = variant === 2 ? 'sprout_tree2' : 'sprout_tree1';
     this.scene.add.image(x, y, treeKey).setScale(2.0).setDepth(3);
   }

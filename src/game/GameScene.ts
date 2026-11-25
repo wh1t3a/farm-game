@@ -250,6 +250,9 @@ export class GameScene extends Phaser.Scene {
     this.load.image('sprout_tree1', 'assets/sprout/objects/tree1.png');
     this.load.image('sprout_tree2', 'assets/sprout/objects/tree2.png');
     this.load.image('sprout_flower1', 'assets/sprout/objects/flower1.png');
+    this.load.image('sprout_bush1', 'assets/sprout/objects/bush1.png');
+    this.load.image('sprout_stump1', 'assets/sprout/objects/stump1.png');
+    this.load.image('sprout_stone1', 'assets/sprout/objects/stone1.png');
     this.load.image('sprout_paths', 'assets/sprout/objects/paths.png');
   }
 
@@ -513,8 +516,8 @@ export class GameScene extends Phaser.Scene {
       onRepeat: () => chicken3.setFlipX(false),
     });
 
-    // Корова в восточных угодьях (Фаза 2)
-    const cow1 = this.add.sprite(1680, 200, 'sprout_cow', 0).setScale(2).setDepth(15);
+    // Корова в восточных угодьях (Фаза 2) — на свободном краю поляны, вдали от грядок
+    const cow1 = this.add.sprite(1835, 165, 'sprout_cow', 0).setScale(2).setDepth(15);
     cow1.play('cow_chew');
 
     this.farmAnimals.push(chicken1, chicken2, chicken3, cow1);

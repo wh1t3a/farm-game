@@ -74,14 +74,18 @@ export class Phase1 {
     this.createTree(755, 130, 2);
     this.createTree(915, 575, 1);
 
-    // Полянки полевых цветов
+    // Полянки цветов и единичные природные объекты (разнесены по разным частям карты)
     this.scene.add.image(155, 365, 'sprout_flower1').setScale(1.5).setDepth(2);
     this.scene.add.image(745, 360, 'sprout_flower1').setScale(1.5).setDepth(2);
     this.scene.add.image(240, 570, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(195, 130, 'sprout_bush1').setScale(1.8).setDepth(2);
+    this.scene.add.image(775, 575, 'sprout_stump1').setScale(1.8).setDepth(2);
+    this.scene.add.image(130, 585, 'sprout_stone1').setScale(1.6).setDepth(2);
   }
 
   public createTree(x: number, y: number, variant: 1 | 2 = 1): void {
-    this.scene.add.ellipse(x, y + 36, 44, 14, 0x000000, 0.25).setDepth(2);
+    const shadowW = variant === 2 ? 40 : 28;
+    this.scene.add.ellipse(x, y + 26, shadowW, 12, 0x000000, 0.25).setDepth(2);
     const treeKey = variant === 2 ? 'sprout_tree2' : 'sprout_tree1';
     this.scene.add.image(x, y, treeKey).setScale(2.0).setDepth(3);
   }
