@@ -40,6 +40,7 @@ import {
 import { Phase1 } from './phases/Phase1';
 import { Phase2 } from './phases/Phase2';
 import { TutorialManager } from './TutorialManager';
+import { track } from '../analytics';
 
 export class GameScene extends Phaser.Scene {
   // Менеджеры фаз (Фаза 1 и Фаза 2)
@@ -121,6 +122,14 @@ export class GameScene extends Phaser.Scene {
   private journalModal!: Phaser.GameObjects.Container;
   private isJournalOpen = false;
   private marketActiveTab: 'exchange' | 'contracts' = 'exchange';
+
+  // Аналитическая телеметрия (Яндекс Метрика)
+  private totalPlaytime = 0;
+  private phase2EligibleTime = 0;
+  private purchaseOrder = 0;
+  private fishSpawnTime = 0;
+  private pestIncidentCounter = 0;
+  private statsCatchesCount = 0;
 
   // Прокачка
   private waterCanLevel = 1;
@@ -404,6 +413,12 @@ export class GameScene extends Phaser.Scene {
     this.currentMilestoneId = 1;
     this.isJournalOpen = false;
     this.marketActiveTab = 'exchange';
+    this.totalPlaytime = 0;
+    this.phase2EligibleTime = 0;
+    this.purchaseOrder = 0;
+    this.fishSpawnTime = 0;
+    this.pestIncidentCounter = 0;
+    this.statsCatchesCount = 0;
     this.targetMovePoint = null;
     this.pendingTargetObject = null;
     this.plots = [];
@@ -484,6 +499,7 @@ export class GameScene extends Phaser.Scene {
 
     // Ключевое условие: покупка Клубники (Zone 3) открывает Фазу 2!
     if (zone.cropType === 'strawberry' || zone.id === 3) {
+      this.phase2EligibleTime = this.totalPlaytime;
       this.playVictoryFanfare();
       this.phase2.onStrawberryUnlocked(() => {
         this.cameras.main.setBounds(0, 0, WORLD_WIDTH, this.scale.height);
@@ -1390,6 +1406,13 @@ export class GameScene extends Phaser.Scene {
 
       this.playScaredPest();
       this.showFloatingNotice(this.crowTargetPlot.x, this.crowTargetPlot.y - 35, `🦅 ВОРОНА СПУГНУТА!\n+${bonusCoins} 🪙 добычи!`, '#facc15');
+
+      track('pest_attack_resolved', {
+        incident_id: this.crowTargetPlot.incidentId || 0,
+        pest_type: 'crow',
+        crop_type: this.crowTargetPlot.cropType,
+        outcome: 'defended_by_player',
+      });
     } else {
       // Промах
       this.playErrorSound();
@@ -1476,6 +1499,13 @@ export class GameScene extends Phaser.Scene {
 
       this.playScaredRat();
       this.showFloatingNotice(this.ratTargetPlot.x, this.ratTargetPlot.y - 35, `🐀 КРЫСА С ПИСКОМ СБЕЖАЛА!\n+${bonusCoins} 🪙 добычи!`, '#facc15');
+
+      track('pest_attack_resolved', {
+        incident_id: this.ratTargetPlot.incidentId || 0,
+        pest_type: 'rat',
+        crop_type: this.ratTargetPlot.cropType,
+        outcome: 'defended_by_player',
+      });
     } else {
       this.playErrorSound();
       this.showFloatingNotice(this.ratTargetPlot.x, this.ratTargetPlot.y - 35, 'Мимо! Крыса увернулась и грызёт дальше!', '#ef4444');
@@ -1548,6 +1578,7 @@ export class GameScene extends Phaser.Scene {
     this.fishingModal.setVisible(false);
 
     if (success) {
+      this.statsCatchesCount++;
       const reward = Phaser.Math.Between(250, 420);
       this.coins += reward;
       this.updateCoinsHud();
@@ -1561,6 +1592,12 @@ export class GameScene extends Phaser.Scene {
       this.playWaterSplash();
       this.showFloatingNotice(this.pondX, this.pondY - 40, 'Рыба сорвалась с крючка! Попробуйте ещё', '#f87171');
     }
+
+    track('fishing_completed', {
+      result: success ? 'success' : 'fail',
+      reaction_time_sec: Math.max(0, Math.round(this.totalPlaytime - this.fishSpawnTime)),
+      total_catches: this.statsCatchesCount,
+    });
   }
 
   // --- ЛАВКА УЛУЧШЕНИЙ ---
@@ -1743,6 +1780,9 @@ export class GameScene extends Phaser.Scene {
   }
 
   private buyShopItem(itemType: 'waterCan' | 'boots' | 'scarecrow' | 'sprinkler' | 'worker'): void {
+    let paidCost = 0;
+    let itemLevel = 1;
+
     if (itemType === 'waterCan') {
       if (this.waterCanLevel >= this.waterCapacities.length) return;
       const cost = this.waterUpgradeCosts[this.waterCanLevel - 1];
@@ -1753,6 +1793,8 @@ export class GameScene extends Phaser.Scene {
       this.coins -= cost;
       this.waterCanLevel++;
       this.water = this.getMaxWater();
+      paidCost = cost;
+      itemLevel = this.waterCanLevel;
       this.playPowerup();
       this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `💧 Лейка улучшена до ${this.getMaxWater()}!`, '#38bdf8');
     } else if (itemType === 'boots') {
@@ -1764,6 +1806,8 @@ export class GameScene extends Phaser.Scene {
       }
       this.coins -= cost;
       this.speedLevel++;
+      paidCost = cost;
+      itemLevel = this.speedLevel;
       this.playPowerup();
       this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `👟 Скорость увеличена!`, '#facc15');
     } else if (itemType === 'scarecrow') {
@@ -1774,6 +1818,8 @@ export class GameScene extends Phaser.Scene {
       }
       this.coins -= this.scarecrowCost;
       this.hasScarecrow = true;
+      paidCost = this.scarecrowCost;
+      itemLevel = 1;
       this.spawnScarecrowVisual();
       this.playPowerup();
       this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `🌾 Пугало установлено!`, '#4ade80');
@@ -1786,6 +1832,8 @@ export class GameScene extends Phaser.Scene {
       }
       this.coins -= cost;
       this.sprinklerLevel++;
+      paidCost = cost;
+      itemLevel = this.sprinklerLevel;
       this.spawnSprinklerVisual(this.sprinklerLevel);
       this.playPowerup();
       this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `💦 Спринклер установлен! Авто-полив активен!`, '#38bdf8');
@@ -1797,10 +1845,21 @@ export class GameScene extends Phaser.Scene {
       }
       this.coins -= this.workerCost;
       this.hasWorker = true;
+      paidCost = this.workerCost;
+      itemLevel = 1;
       this.spawnWorkerVisual();
       this.playPowerup();
       this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 30, `🧑‍🌾 Помощник нанят и готов к труду!`, '#4ade80');
     }
+
+    this.purchaseOrder++;
+    track('shop_purchase', {
+      item_id: itemType,
+      item_level: itemLevel,
+      cost_coins: paidCost,
+      purchase_sequence_number: this.purchaseOrder,
+      current_phase: this.phase2.isUnlocked() ? 2 : 1,
+    });
 
     this.updateCoinsHud();
     this.updateWaterHud();
@@ -1994,6 +2053,12 @@ export class GameScene extends Phaser.Scene {
           this.updatePlotVisuals(target);
           this.playPlant();
           this.showFloatingNotice(target.x, target.y - 25, '🌱 Посажено (помощник)', '#86efac');
+          track('crop_planted', {
+            crop_type: target.cropType,
+            unlocked_zones_count: this.zones.filter((z) => z.unlocked).length,
+            playtime_sec: Math.round(this.totalPlaytime),
+            coins: this.coins,
+          });
         }
 
         this.workerStamina = Math.max(0, this.workerStamina - 7);
@@ -2144,6 +2209,7 @@ export class GameScene extends Phaser.Scene {
     if (this.isPaused) return;
 
     const seconds = delta / 1000;
+    this.totalPlaytime += seconds;
 
     // Фоновая эмбиент музыка в стиле Minecraft
     this.updateAmbientMusic(seconds);
@@ -2385,6 +2451,8 @@ export class GameScene extends Phaser.Scene {
       if (ripePlots.length > 0 && Math.random() < spawnChance) {
         const victim = Phaser.Utils.Array.GetRandom(ripePlots) as Plot;
         if (victim) {
+          this.pestIncidentCounter++;
+          victim.incidentId = this.pestIncidentCounter;
           victim.state = 'attacked';
           victim.maxPestTimer = 8.0;
           victim.pestTimer = victim.maxPestTimer;
@@ -2406,6 +2474,12 @@ export class GameScene extends Phaser.Scene {
             this.playPestAlert();
             this.showFloatingNotice(victim.x, victim.y - 30, '⚠️ ВОРОНА КЛЮЁТ!', '#ef4444');
           }
+
+          track('pest_attack_started', {
+            incident_id: victim.incidentId,
+            pest_type: isRat ? 'rat' : 'crow',
+            crop_type: victim.cropType,
+          });
         }
       }
     }
@@ -2431,6 +2505,12 @@ export class GameScene extends Phaser.Scene {
         this.updatePlotVisuals(plot);
         this.playCropLost();
         this.showFloatingNotice(plot.x, plot.y - 30, isRat ? '🥀 Крыса сгрызла урожай!' : '🥀 Ворона склевала урожай!', '#f87171');
+        track('pest_attack_resolved', {
+          incident_id: plot.incidentId || 0,
+          pest_type: isRat ? 'rat' : 'crow',
+          crop_type: plot.cropType,
+          outcome: 'ignored_crop_lost',
+        });
       }
     }
   }
@@ -2608,9 +2688,13 @@ export class GameScene extends Phaser.Scene {
     this.fishTimer -= seconds;
     if (this.fishTimer <= 0) {
       this.isGoldenFishActive = true;
+      this.fishSpawnTime = this.totalPlaytime;
       this.fishContainer.setVisible(true);
       this.playReadySound();
       this.showFloatingNotice(this.pondX, this.pondY - 50, '🎣 ВСПЛЕСК В ПРУДУ!\nКлюёт Золотая рыба!', '#facc15');
+      track('fish_spawned', {
+        playtime_sec: Math.round(this.totalPlaytime),
+      });
     }
   }
 
@@ -2931,6 +3015,12 @@ export class GameScene extends Phaser.Scene {
         this.updatePlotVisuals(plot);
         this.playPlant();
         this.showFloatingNotice(plot.x, plot.y - 25, `🌱 Посажено!`, '#86efac');
+        track('crop_planted', {
+          crop_type: plot.cropType,
+          unlocked_zones_count: this.zones.filter((z) => z.unlocked).length,
+          playtime_sec: Math.round(this.totalPlaytime),
+          coins: this.coins,
+        });
         if (this.tutorialManager) {
           this.tutorialManager.onPlotPlanted();
         }
@@ -3235,6 +3325,13 @@ export class GameScene extends Phaser.Scene {
     this.playPowerup();
     this.showFloatingNotice(this.phase2GateX + 60, this.phase2GateY - 40, '🎉 Фаза 2 открыта! Доступны Кукуруза 🌽 и Арбузы 🍉!\nБерегитесь крыс 🐀!', '#4ade80');
     this.checkMilestones();
+
+    track('phase2_unlocked', {
+      playtime_total_sec: Math.round(this.totalPlaytime),
+      time_to_earn_sec: Math.round(this.phase2EligibleTime > 0 ? this.totalPlaytime - this.phase2EligibleTime : this.totalPlaytime),
+      balance_at_unlock: this.coins,
+      cost_coins: PHASE2_CONFIG.unlockCost,
+    });
   }
 
   // --- ПРОИЗВОДСТВЕННЫЕ ЗДАНИЯ И ПЕРЕРАБОТКА (ФАЗА 2) ---

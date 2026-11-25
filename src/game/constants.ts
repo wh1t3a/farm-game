@@ -142,6 +142,7 @@ export interface Plot {
   growthProgress: number;
   pestTimer: number;
   maxPestTimer: number;
+  incidentId?: number;
   // Графические объекты
   border: Phaser.GameObjects.Rectangle;
   soil: Phaser.GameObjects.Rectangle;
