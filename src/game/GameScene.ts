@@ -32,11 +32,13 @@ import {
 } from './constants';
 import { Phase1 } from './phases/Phase1';
 import { Phase2 } from './phases/Phase2';
+import { TutorialManager } from './TutorialManager';
 
 export class GameScene extends Phaser.Scene {
   // Менеджеры фаз (Фаза 1 и Фаза 2)
   public phase1!: Phase1;
   public phase2!: Phase2;
+  public tutorialManager!: TutorialManager;
 
   // Локации (геттеры из отдельного файла констант)
   get wellX() { return PHASE1_LOCATIONS.wellX; }
@@ -141,7 +143,7 @@ export class GameScene extends Phaser.Scene {
   // Большая наглядная доска цен у Амбара
   private marketBoardContainer!: Phaser.GameObjects.Container;
   private marketBoardTexts: Record<CropType, Phaser.GameObjects.Text> = {} as any;
-  private marketBoardTimerText!: Phaser.GameObjects.Text;
+  private marketBoardTimerText?: Phaser.GameObjects.Text;
 
   // Модальное окно торговли у Склада
   private marketModal!: Phaser.GameObjects.Container;
@@ -240,11 +242,15 @@ export class GameScene extends Phaser.Scene {
 
     this.refreshMarketPrices(true);
 
-    // Клик мышью
-    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+    // Менеджер интерактивного обучения
+    this.tutorialManager = new TutorialManager(this);
+    this.time.delayedCall(400, () => {
+      this.tutorialManager.start();
+    });
+
+    // Звуковая инициализация при клике (управление персонажем и грядками — только клавиатура)
+    this.input.on('pointerdown', () => {
       this.initAudio();
-      if (this.isPaused || this.isShopOpen || this.isMarketOpen || this.isFishingActive || this.isCrowMinigameActive || this.isRatMinigameActive || this.isCinematicActive) return;
-      this.handlePointerClick(pointer);
     });
   }
 
@@ -461,7 +467,7 @@ export class GameScene extends Phaser.Scene {
     }).setDepth(36).setInteractive({ useHandCursor: true }).setScrollFactor(0);
     shopBtn.on('pointerdown', () => this.openShopModal());
 
-    this.add.text(width / 2, this.scale.height - 18, 'WASD / Клик — Идти  |  ПРОБЕЛ — Действие  |  P — Пауза  |  Фаза 2: Ворота справа (1 🪙)', {
+    this.add.text(width / 2, this.scale.height - 18, 'WASD / Стрелки — Ходьба  |  ПРОБЕЛ — Действие  |  P — Пауза  |  T — Обучение  |  Фаза 2: Ворота справа (1 🪙)', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '13px',
       color: '#94a3b8',
@@ -512,6 +518,14 @@ export class GameScene extends Phaser.Scene {
       });
     }
 
+    // Клавиша T для запуска/повтора обучения
+    this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.T).on('down', () => {
+      if (this.isPaused || this.isShopOpen || this.isMarketOpen) return;
+      if (this.tutorialManager) {
+        this.tutorialManager.start();
+      }
+    });
+
     // Клавиша P для паузы
     this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P).on('down', () => {
       this.togglePause();
@@ -519,6 +533,10 @@ export class GameScene extends Phaser.Scene {
 
     // Клавиша ESC
     this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
+      if (this.tutorialManager && this.tutorialManager.isTutorialActive()) {
+        this.tutorialManager.skip();
+        return;
+      }
       if (this.isCinematicActive) {
         this.phase2.endCinematic();
         this.cameras.main.setBounds(0, 0, WORLD_WIDTH, this.scale.height);
@@ -1419,24 +1437,40 @@ export class GameScene extends Phaser.Scene {
       lineSpacing: 8,
     }).setOrigin(0.5).setName('pauseStatsText');
 
-    const resumeBtn = this.add.text(0, 80, '▶️ ПРОДОЛЖИТЬ ИГРУ [P / ESC]', {
+    const resumeBtn = this.add.text(0, 68, '▶️ ПРОДОЛЖИТЬ ИГРУ [P / ESC]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '16px',
+      fontSize: '15px',
       color: '#ffffff',
       backgroundColor: '#2563eb',
-      padding: { x: 24, y: 10 },
+      padding: { x: 20, y: 8 },
       fontStyle: 'bold',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
     resumeBtn.on('pointerdown', () => this.togglePause());
 
-    const tip = this.add.text(0, 135, 'Нажмите P или ESC на клавиатуре, чтобы вернуться к игре', {
+    const tutorialBtn = this.add.text(0, 110, '🎓 НАЧАТЬ ОБУЧЕНИЕ ЗАНОВО [T]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '12px',
+      fontSize: '13px',
+      color: '#38bdf8',
+      backgroundColor: '#1e293b',
+      padding: { x: 16, y: 6 },
+      fontStyle: 'bold',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    tutorialBtn.on('pointerdown', () => {
+      this.togglePause();
+      if (this.tutorialManager) {
+        this.tutorialManager.start();
+      }
+    });
+
+    const tip = this.add.text(0, 148, 'Нажмите P / ESC для возврата, или T для перезапуска обучения', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '11px',
       color: '#64748b',
     }).setOrigin(0.5);
 
-    this.pauseModal.add([backdrop, panel, title, subtitle, statsText, resumeBtn, tip]);
+    this.pauseModal.add([backdrop, panel, title, subtitle, statsText, resumeBtn, tutorialBtn, tip]);
   }
 
   private updatePauseModalContent(): void {
@@ -1546,41 +1580,13 @@ export class GameScene extends Phaser.Scene {
     const currentSpeed = this.getPlayerSpeed();
 
     if (dx !== 0 || dy !== 0) {
-      this.targetMovePoint = null;
-      this.pendingTargetObject = null;
-
       const len = Math.hypot(dx, dy);
       this.playerContainer.x += (dx / len) * currentSpeed * seconds;
       this.playerContainer.y += (dy / len) * currentSpeed * seconds;
       this.playerContainer.rotation = Math.sin(Date.now() / 90) * 0.08;
-    } else if (this.targetMovePoint) {
-      const dist = Phaser.Math.Distance.Between(
-        this.playerContainer.x,
-        this.playerContainer.y,
-        this.targetMovePoint.x,
-        this.targetMovePoint.y,
-      );
 
-      const canInteractNow = this.pendingTargetObject && this.checkIfNearPendingObject();
-
-      if (dist <= 8 || canInteractNow) {
-        this.targetMovePoint = null;
-        this.playerContainer.rotation = 0;
-
-        if (this.pendingTargetObject) {
-          this.executePendingAction();
-          this.pendingTargetObject = null;
-        }
-      } else {
-        const angle = Phaser.Math.Angle.Between(
-          this.playerContainer.x,
-          this.playerContainer.y,
-          this.targetMovePoint.x,
-          this.targetMovePoint.y,
-        );
-        this.playerContainer.x += Math.cos(angle) * currentSpeed * seconds;
-        this.playerContainer.y += Math.sin(angle) * currentSpeed * seconds;
-        this.playerContainer.rotation = Math.sin(Date.now() / 90) * 0.08;
+      if (this.tutorialManager) {
+        this.tutorialManager.onPlayerMove(this.playerContainer.x, this.playerContainer.y);
       }
     } else {
       this.playerContainer.rotation = 0;
@@ -1821,7 +1827,9 @@ export class GameScene extends Phaser.Scene {
 
   private updateMarket(seconds: number): void {
     this.marketTimer -= seconds;
-    this.marketBoardTimerText.setText(`Смена: ${Math.ceil(this.marketTimer)}с`);
+    if (this.marketBoardTimerText) {
+      this.marketBoardTimerText.setText(`Смена: ${Math.ceil(this.marketTimer)}с`);
+    }
 
     if (this.marketTimer <= 0) {
       this.marketTimer = MARKET_REFRESH_INTERVAL;
@@ -1841,8 +1849,8 @@ export class GameScene extends Phaser.Scene {
       }
       this.marketPrices[key] = price;
 
-      // Обновляем текст на большой наглядной доске у Амбара
-      if (this.marketBoardTexts[key]) {
+      // Обновляем текст на наглядной доске у Амбара, если она присутствует
+      if (this.marketBoardTexts && this.marketBoardTexts[key]) {
         const isHot = key === this.hotCrop;
         this.marketBoardTexts[key].setText(`${info.icon} ${price}🪙${isHot ? '🔥' : ''}`);
         this.marketBoardTexts[key].setColor(isHot ? '#fef08a' : '#ffffff');
@@ -1881,6 +1889,10 @@ export class GameScene extends Phaser.Scene {
     this.updateInventoryHud();
     this.playSaleSound();
     this.showFloatingNotice(this.barnX, this.barnY - 40, `💰 Продано на +${revenue} 🪙!`, '#facc15');
+
+    if (this.tutorialManager) {
+      this.tutorialManager.onCropsSold();
+    }
   }
 
   // --- СОБЫТИЕ ЗОЛОТОЙ РЫБЫ ---
@@ -1899,111 +1911,10 @@ export class GameScene extends Phaser.Scene {
 
   // --- ИНТЕРАКЦИЯ И КЛИКИ ---
 
-  private handlePointerClick(pointer: Phaser.Input.Pointer): void {
-    if (this.isPaused || this.isCinematicActive) return;
-
-    if (pointer.y <= 85 || pointer.y >= this.scale.height - 35) return;
-
-    const clickedX = pointer.worldX;
-    const clickedY = pointer.worldY;
-
-    const px = this.playerContainer.x;
-    const py = this.playerContainer.y;
-
-    // 1. Колодец Фазы 1
-    if (Phaser.Math.Distance.Between(clickedX, clickedY, this.wellX, this.wellY) <= this.wellRadius + 15) {
-      if (Phaser.Math.Distance.Between(px, py, this.wellX, this.wellY) <= this.wellRadius + 20) {
-        this.fillWater();
-      } else {
-        this.targetMovePoint = { x: this.wellX + 45, y: this.wellY };
-        this.pendingTargetObject = { type: 'well' };
-      }
-      return;
-    }
-
-    // 1.1 Бочка с водой Фазы 2
-    if (Phaser.Math.Distance.Between(clickedX, clickedY, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 15) {
-      if (Phaser.Math.Distance.Between(px, py, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 20) {
-        this.fillWater();
-      } else {
-        this.targetMovePoint = { x: this.phase2WellX - 45, y: this.phase2WellY };
-        this.pendingTargetObject = { type: 'phase2Well' };
-      }
-      return;
-    }
-
-    // 1.2 Ворота Фазы 2
-    if (Phaser.Math.Distance.Between(clickedX, clickedY, this.phase2GateX, this.phase2GateY) <= 65) {
-      if (Phaser.Math.Distance.Between(px, py, this.phase2GateX, this.phase2GateY) <= INTERACT_RADIUS + 20) {
-        this.tryUnlockPhase2();
-      } else {
-        this.targetMovePoint = { x: this.phase2GateX - 45, y: this.phase2GateY };
-        this.pendingTargetObject = { type: 'phase2Gate' };
-      }
-      return;
-    }
-
-    // 2. Пруд (Рыбалка)
-    if (Phaser.Math.Distance.Between(clickedX, clickedY, this.pondX, this.pondY) <= 65) {
-      if (Phaser.Math.Distance.Between(px, py, this.pondX, this.pondY) <= 70) {
-        this.startFishing();
-      } else {
-        this.targetMovePoint = { x: this.pondX + 50, y: this.pondY };
-        this.pendingTargetObject = { type: 'pond' };
-      }
-      return;
-    }
-
-    // 3. Амбар / Доска биржи (Рынок)
-    const isBarnClicked = Math.abs(clickedX - this.barnX) <= 85 && Math.abs(clickedY - this.barnY) <= 65;
-    const isBoardClicked = Math.abs(clickedX - this.barnX) <= 85 && Math.abs(clickedY - 345) <= 45;
-    if (isBarnClicked || isBoardClicked) {
-      const nearBarn = Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 30;
-      const nearBoard = Phaser.Math.Distance.Between(px, py, this.barnX, 345) <= INTERACT_RADIUS + 30;
-      if (nearBarn || nearBoard) {
-        this.openMarketModal();
-      } else {
-        const destY = isBoardClicked ? 345 : this.barnY;
-        this.targetMovePoint = { x: this.barnX - 55, y: destY };
-        this.pendingTargetObject = { type: 'barn' };
-      }
-      return;
-    }
-
-    // 4. Лавка улучшений
-    if (Math.abs(clickedX - this.shopX) <= 75 && Math.abs(clickedY - this.shopY) <= 65) {
-      if (Phaser.Math.Distance.Between(px, py, this.shopX, this.shopY) <= INTERACT_RADIUS + 30) {
-        this.openShopModal();
-      } else {
-        this.targetMovePoint = { x: this.shopX - 55, y: this.shopY };
-        this.pendingTargetObject = { type: 'shop' };
-      }
-      return;
-    }
-
-    // 5. Грядки
-    for (const plot of this.plots) {
-      if (!plot.unlocked) continue;
-      if (
-        clickedX >= plot.x - plot.width / 2 &&
-        clickedX <= plot.x + plot.width / 2 &&
-        clickedY >= plot.y - plot.height / 2 &&
-        clickedY <= plot.y + plot.height / 2
-      ) {
-        const distToPlayer = Phaser.Math.Distance.Between(px, py, plot.x, plot.y);
-        if (distToPlayer <= INTERACT_RADIUS) {
-          this.interactWithPlot(plot);
-        } else {
-          this.targetMovePoint = { x: plot.x, y: plot.y };
-          this.pendingTargetObject = { type: 'plot', obj: plot };
-        }
-        return;
-      }
-    }
-
-    // 6. Свободный клик для ходьбы
-    this.targetMovePoint = { x: clickedX, y: clickedY };
-    this.pendingTargetObject = null;
+  // --- УПРАВЛЕНИЕ: МЫШЬ ОТКЛЮЧЕНА, ИГРА ПОЛНОСТЬЮ КЛАВИАТУРНАЯ ---
+  private handlePointerClick(_pointer: Phaser.Input.Pointer): void {
+    // Управление через клики мыши по миру отключено по требованию:
+    // персонаж и все игровые действия управляются строго с клавиатуры (WASD / Стрелки / Пробел)
   }
 
   private detectInteractionTarget(): void {
@@ -2014,7 +1925,7 @@ export class GameScene extends Phaser.Scene {
     if (Phaser.Math.Distance.Between(px, py, this.phase2GateX, this.phase2GateY) <= INTERACT_RADIUS + 15) {
       if (!this.phase2.isUnlocked()) {
         if (this.phase2.isRequirementMet()) {
-          this.showPrompt(`✨ [ПРОБЕЛ / Клик] Открыть Фазу 2 (${PHASE2_CONFIG.unlockCost} 🪙)`);
+          this.showPrompt(`✨ [ПРОБЕЛ] Открыть Фазу 2 (${PHASE2_CONFIG.unlockCost} 🪙)`);
         } else {
           this.showPrompt('🔒 Фаза 2: Сначала откройте Клубнику 🍓');
         }
@@ -2027,7 +1938,7 @@ export class GameScene extends Phaser.Scene {
     // Бочка с водой Фазы 2
     if (Phaser.Math.Distance.Between(px, py, this.phase2WellX, this.phase2WellY) <= this.phase2WellRadius + 20) {
       if (this.water < this.getMaxWater()) {
-        this.showPrompt('[ПРОБЕЛ / Клик] Набрать воду из бочки');
+        this.showPrompt('[ПРОБЕЛ] Набрать воду из бочки');
       } else {
         this.showPrompt(`Лейка полна (${this.water}/${this.getMaxWater()})`);
       }
@@ -2047,19 +1958,16 @@ export class GameScene extends Phaser.Scene {
     // Пруд
     if (Phaser.Math.Distance.Between(px, py, this.pondX, this.pondY) <= 70) {
       if (this.isGoldenFishActive) {
-        this.showPrompt('✨ [ПРОБЕЛ / Клик] ЛОВИТЬ ЗОЛОТУЮ РЫБУ!');
+        this.showPrompt('✨ [ПРОБЕЛ] ЛОВИТЬ ЗОЛОТУЮ РЫБУ!');
       } else {
         this.showPrompt('🎣 Пруд: Ждите всплеска рыбы');
       }
       return;
     }
 
-    // Амбар (Рынок) / Доска котировок
-    if (
-      Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 20 ||
-      Phaser.Math.Distance.Between(px, py, this.barnX, 345) <= INTERACT_RADIUS + 20
-    ) {
-      this.showPrompt('[ПРОБЕЛ / Клик] Открыть биржу Склада');
+    // Амбар (Склад)
+    if (Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 25) {
+      this.showPrompt('🏪 [ПРОБЕЛ] Войти на Склад (Биржа)');
       return;
     }
 
@@ -2074,7 +1982,7 @@ export class GameScene extends Phaser.Scene {
       const distToWorker = Phaser.Math.Distance.Between(px, py, this.workerContainer.x, this.workerContainer.y);
       if (distToWorker <= 55) {
         if (this.workerState === 'tired' || this.workerStamina < 100) {
-          this.showPrompt('[ПРОБЕЛ / Клик] Угостить помощника (Восстановить силы)');
+          this.showPrompt('[ПРОБЕЛ] Угостить помощника (Восстановить силы)');
         } else {
           this.showPrompt(`🧑‍🌾 Помощник трудится (Бодрость: ${Math.round(this.workerStamina)}%)`);
         }
@@ -2153,6 +2061,11 @@ export class GameScene extends Phaser.Scene {
     if (!justPressed) return;
 
     this.initAudio();
+
+    if (this.tutorialManager && this.tutorialManager.isTutorialActive()) {
+      this.tutorialManager.onActionKeyPressed();
+    }
+
     const px = this.playerContainer.x;
     const py = this.playerContainer.y;
 
@@ -2230,6 +2143,10 @@ export class GameScene extends Phaser.Scene {
     this.updateWaterHud();
     this.playWaterFill();
     this.showFloatingNotice(this.wellX, this.wellY - 30, `💧 +${max} Воды!`, '#38bdf8');
+
+    if (this.tutorialManager) {
+      this.tutorialManager.onWaterFilled();
+    }
   }
 
   private interactWithPlot(plot: Plot): void {
@@ -2243,6 +2160,9 @@ export class GameScene extends Phaser.Scene {
         this.updatePlotVisuals(plot);
         this.playPlant();
         this.showFloatingNotice(plot.x, plot.y - 25, `🌱 Посажено!`, '#86efac');
+        if (this.tutorialManager) {
+          this.tutorialManager.onPlotPlanted();
+        }
         break;
 
       case 'seeded':
@@ -2258,6 +2178,9 @@ export class GameScene extends Phaser.Scene {
         this.updatePlotVisuals(plot);
         this.playWaterSplash();
         this.showFloatingNotice(plot.x, plot.y - 25, '💧 Полито!', '#38bdf8');
+        if (this.tutorialManager) {
+          this.tutorialManager.onPlotWatered();
+        }
         break;
 
       case 'ready':
@@ -2268,6 +2191,9 @@ export class GameScene extends Phaser.Scene {
         this.updatePlotVisuals(plot);
         this.playHarvest();
         this.showFloatingNotice(plot.x, plot.y - 25, `+1 ${info.icon} в корзину!`, '#facc15');
+        if (this.tutorialManager) {
+          this.tutorialManager.onCropHarvested();
+        }
         break;
 
       case 'attacked':

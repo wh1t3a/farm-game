@@ -29,7 +29,7 @@ export class Phase1 {
   public shop!: Phaser.GameObjects.Rectangle;
   public fishContainer!: Phaser.GameObjects.Container;
   public marketBoardTexts: Record<CropType, Phaser.GameObjects.Text> = {} as any;
-  public marketBoardTimerText!: Phaser.GameObjects.Text;
+  public marketBoardTimerText?: Phaser.GameObjects.Text;
 
   // Зоны и грядки
   private zones: FarmZone[] = [];
@@ -112,49 +112,39 @@ export class Phase1 {
     const base = this.scene.add.rectangle(wellX, wellY, 78, 68, 0x475569);
     base.setStrokeStyle(4, 0x1e293b);
     base.setDepth(3);
-    base.setInteractive({ useHandCursor: true });
-    base.on('pointerdown', onRefill);
 
     const waterSurface = this.scene.add.circle(wellX, wellY, 24, 0x0284c7);
     waterSurface.setDepth(4);
 
     const roof = this.scene.add.rectangle(wellX, wellY - 42, 92, 22, 0x854d0e);
     roof.setDepth(5);
-    roof.setInteractive({ useHandCursor: true });
-    roof.on('pointerdown', onRefill);
 
-    const label = this.scene.add.text(wellX, wellY + 44, '💧 КОЛОДЕЦ\n(Набрать воду)', {
+    this.scene.add.text(wellX, wellY + 44, '💧 КОЛОДЕЦ\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#7dd3fc',
       align: 'center',
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(5);
-    label.setInteractive({ useHandCursor: true });
-    label.on('pointerdown', onRefill);
   }
 
   public createPond(onFish: () => void): void {
     const { pondX, pondY } = PHASE1_LOCATIONS;
     const pondBg = this.scene.add.ellipse(pondX, pondY, 110, 80, 0x0369a1).setDepth(2);
     pondBg.setStrokeStyle(4, 0x38bdf8);
-    pondBg.setInteractive({ useHandCursor: true });
-    pondBg.on('pointerdown', onFish);
 
     // Кувшинки
     this.scene.add.circle(pondX - 25, pondY - 15, 8, 0x15803d).setDepth(3);
     this.scene.add.circle(pondX + 22, pondY + 12, 10, 0x166534).setDepth(3);
     this.scene.add.circle(pondX + 26, pondY + 10, 3, 0xf472b6).setDepth(4);
 
-    const label = this.scene.add.text(pondX, pondY + 50, '🎣 ПРУД\n(Рыбалка)', {
+    this.scene.add.text(pondX, pondY + 50, '🎣 ПРУД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#67e8f9',
       align: 'center',
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(5);
-    label.setInteractive({ useHandCursor: true });
-    label.on('pointerdown', onFish);
 
     // Контейнер золотой рыбы
     this.fishContainer = this.scene.add.container(pondX, pondY).setDepth(6);
@@ -185,21 +175,14 @@ export class Phase1 {
     this.barn = this.scene.add.rectangle(barnX, barnY, 115, 95, 0x991b1b);
     this.barn.setStrokeStyle(3, 0x5f1111);
     this.barn.setDepth(3);
-    this.barn.setInteractive({ useHandCursor: true });
-    this.barn.on('pointerdown', onOpenMarket);
 
     const roof = this.scene.add.rectangle(barnX, barnY - 52, 128, 26, 0xb91c1c);
     roof.setDepth(4);
-    roof.setInteractive({ useHandCursor: true });
-    roof.on('pointerdown', onOpenMarket);
 
     // Ворота амбара
-    const doorFrame = this.scene.add.rectangle(barnX, barnY + 16, 44, 56, 0x5f1111).setDepth(4);
-    const doorL = this.scene.add.rectangle(barnX - 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
-    const doorR = this.scene.add.rectangle(barnX + 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
-    doorFrame.setInteractive({ useHandCursor: true }).on('pointerdown', onOpenMarket);
-    doorL.setInteractive({ useHandCursor: true }).on('pointerdown', onOpenMarket);
-    doorR.setInteractive({ useHandCursor: true }).on('pointerdown', onOpenMarket);
+    this.scene.add.rectangle(barnX, barnY + 16, 44, 56, 0x5f1111).setDepth(4);
+    this.scene.add.rectangle(barnX - 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
+    this.scene.add.rectangle(barnX + 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
 
     // Ручки дверей
     this.scene.add.circle(barnX - 3, barnY + 16, 2, 0xfacc15).setDepth(6);
@@ -209,70 +192,14 @@ export class Phase1 {
     this.scene.add.rectangle(barnX, barnY - 22, 20, 20, 0x451a03).setDepth(4);
     this.scene.add.rectangle(barnX, barnY - 22, 16, 16, 0xfef08a, 0.9).setDepth(5);
 
-    const barnLabel = this.scene.add.text(barnX, barnY - 52, '🏪 СКЛАД\n[ПРОБЕЛ / Клик]', {
+    // Чистая, понятная вывеска склада без перекрытия
+    this.scene.add.text(barnX, barnY - 52, '🏪 СКЛАД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#fef08a',
       fontStyle: 'bold',
       align: 'center',
     }).setOrigin(0.5).setDepth(6);
-    barnLabel.setInteractive({ useHandCursor: true });
-    barnLabel.on('pointerdown', onOpenMarket);
-
-    // Отдельная деревянная доска цен на бирже (расположена под складом на ножках, не перекрывает амбар)
-    const boardY = 345;
-    this.scene.add.rectangle(barnX - 48, boardY + 34, 6, 20, 0x5c3317).setDepth(2);
-    this.scene.add.rectangle(barnX + 48, boardY + 34, 6, 20, 0x5c3317).setDepth(2);
-
-    const marketBoardContainer = this.scene.add.container(barnX, boardY).setDepth(6);
-    const boardBg = this.scene.add.rectangle(0, 0, 154, 70, 0x78350f);
-    boardBg.setStrokeStyle(3, 0xd97706);
-    boardBg.setInteractive({ useHandCursor: true });
-    boardBg.on('pointerdown', onOpenMarket);
-
-    const boardInner = this.scene.add.rectangle(0, 0, 146, 62, 0x451a03);
-    boardInner.setInteractive({ useHandCursor: true });
-    boardInner.on('pointerdown', onOpenMarket);
-
-    const boardHeader = this.scene.add.text(0, -22, '📊 БИРЖА УРОЖАЯ', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '9px',
-      color: '#fef08a',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    const keys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
-    const coords = [
-      { x: -50, y: -7 },
-      { x: -2, y: -7 },
-      { x: 46, y: -7 },
-      { x: -50, y: 9 },
-      { x: -2, y: 9 },
-      { x: 46, y: 9 },
-    ];
-
-    marketBoardContainer.add([boardBg, boardInner, boardHeader]);
-
-    keys.forEach((k, idx) => {
-      const pos = coords[idx];
-      const crop = CROPS[k];
-      const t = this.scene.add.text(pos.x, pos.y, `${crop.icon} 10🪙`, {
-        fontFamily: 'system-ui, sans-serif',
-        fontSize: '9px',
-        color: '#ffffff',
-        fontStyle: 'bold',
-      });
-      this.marketBoardTexts[k] = t;
-      marketBoardContainer.add(t);
-    });
-
-    this.marketBoardTimerText = this.scene.add.text(0, 22, 'Смена: 25с', {
-      fontFamily: 'system-ui, sans-serif',
-      fontSize: '8px',
-      color: '#cbd5e1',
-    }).setOrigin(0.5);
-
-    marketBoardContainer.add(this.marketBoardTimerText);
   }
 
   public createWorkshopShop(onOpenShop: () => void): void {
@@ -282,23 +209,17 @@ export class Phase1 {
     this.shop = this.scene.add.rectangle(shopX, shopY, 110, 85, 0x1e3a8a);
     this.shop.setStrokeStyle(3, 0x172554);
     this.shop.setDepth(3);
-    this.shop.setInteractive({ useHandCursor: true });
-    this.shop.on('pointerdown', onOpenShop);
 
     const roof = this.scene.add.rectangle(shopX, shopY - 46, 122, 22, 0x2563eb);
     roof.setDepth(4);
-    roof.setInteractive({ useHandCursor: true });
-    roof.on('pointerdown', onOpenShop);
 
-    const shopLabel = this.scene.add.text(shopX, shopY, '🛠️ ЛАВКА\nУЛУЧШЕНИЙ\n[ПРОБЕЛ / Клик]', {
+    this.scene.add.text(shopX, shopY, '🛠️ ЛАВКА\nУЛУЧШЕНИЙ\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#bfdbfe',
       fontStyle: 'bold',
       align: 'center',
     }).setOrigin(0.5).setDepth(5);
-    shopLabel.setInteractive({ useHandCursor: true });
-    shopLabel.on('pointerdown', onOpenShop);
   }
 
   public createZonesAndPlots(
@@ -378,10 +299,6 @@ export class Phase1 {
         pestText,
       };
 
-      // Интерактивность грядки
-      border.setInteractive({ useHandCursor: true }).on('pointerdown', () => onPlotClick(plot));
-      soil.setInteractive({ useHandCursor: true }).on('pointerdown', () => onPlotClick(plot));
-
       this.plots.push(plot);
     }
 
@@ -418,8 +335,6 @@ export class Phase1 {
 
       signBox.add([signBg, signText]);
       signBox.setSize(110, 48);
-      signBox.setInteractive({ useHandCursor: true });
-      signBox.on('pointerdown', () => onBuyZone(zone));
 
       zone.signContainer = signBox;
     }

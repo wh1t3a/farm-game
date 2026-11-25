@@ -82,25 +82,19 @@ export class Phase2 {
     const barrel = this.scene.add.rectangle(wellX, wellY, 68, 62, 0x78350f);
     barrel.setStrokeStyle(3, 0x451a03);
     barrel.setDepth(3);
-    barrel.setInteractive({ useHandCursor: true });
-    barrel.on('pointerdown', onRefillWater);
 
     const barrelWater = this.scene.add.circle(wellX, wellY, 20, 0x0284c7).setDepth(4);
-    barrelWater.setInteractive({ useHandCursor: true });
-    barrelWater.on('pointerdown', onRefillWater);
 
     const barrelRim = this.scene.add.circle(wellX, wellY, 22);
     barrelRim.setStrokeStyle(2, 0x94a3b8).setDepth(4);
 
-    const barrelLabel = this.scene.add.text(wellX, wellY + 42, '🪣 БОЧКА С ВОДОЙ\n[ПРОБЕЛ / Клик]', {
+    this.scene.add.text(wellX, wellY + 42, '🪣 БОЧКА С ВОДОЙ\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#7dd3fc',
       align: 'center',
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(5);
-    barrelLabel.setInteractive({ useHandCursor: true });
-    barrelLabel.on('pointerdown', onRefillWater);
 
     // Мельница декоративная на востоке
     const mill = this.scene.add.rectangle(PHASE2_CONFIG.millX, PHASE2_CONFIG.millY, 70, 90, 0x475569).setDepth(3);
@@ -190,8 +184,6 @@ export class Phase2 {
   private addInteractiveSignBg(w: number, h: number, onClick: () => void): Phaser.GameObjects.Rectangle {
     const bg = this.scene.add.rectangle(0, 0, w, h, 0x78350f);
     bg.setStrokeStyle(2, 0xfacc15);
-    bg.setInteractive({ useHandCursor: true });
-    bg.on('pointerdown', onClick);
     return bg;
   }
 
@@ -270,9 +262,6 @@ export class Phase2 {
         pestContainer,
         pestText,
       };
-
-      border.setInteractive({ useHandCursor: true }).on('pointerdown', () => onPlotClick(plot));
-      soil.setInteractive({ useHandCursor: true }).on('pointerdown', () => onPlotClick(plot));
 
       this.plots.push(plot);
     }
