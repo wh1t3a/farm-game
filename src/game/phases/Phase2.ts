@@ -67,13 +67,13 @@ export class Phase2 {
   // --- ЛАНДШАФТ И ДЕКОРАЦИИ ФАЗЫ 2 ---
 
   public createLandscape(onRefillWater: () => void): void {
-    // Тёмное пахотное поле Фазы 2 (тайловый грунт)
+    // Зона обработанной земли под грядки Фазы 2
     const dirtFieldP2 = this.scene.add.tileSprite(
-      1440, 340, 680, 480, 'sprout_tilled_dirt'
-    ).setDepth(1).setAlpha(0.85);
+      1440, 340, 580, 360, 'sprout_dirt_tile'
+    ).setDepth(1).setAlpha(0.65);
 
     // Дорожка от ворот в центр восточных земель
-    const pathP2 = this.scene.add.tileSprite(1200, 340, 480, 36, 'sprout_paths').setDepth(2);
+    const pathP2 = this.scene.add.tileSprite(1200, 340, 480, 24, 'sprout_paths').setDepth(2);
 
     // Дополнительный источник воды в Фазе 2 (Бочка с дождевой водой)
     const { wellX, wellY } = PHASE2_CONFIG;
@@ -127,18 +127,16 @@ export class Phase2 {
       fontStyle: 'bold',
     }).setOrigin(0.5).setDepth(3);
 
-    // Деревья на востоке
-    this.createTree(1050, 140);
-    this.createTree(1740, 130);
-    this.createTree(1860, 560);
+    // Деревья на востоке из пака Sprout Lands
+    this.createTree(1050, 140, 1);
+    this.createTree(1740, 130, 2);
+    this.createTree(1860, 560, 1);
   }
 
-  private createTree(x: number, y: number): void {
-    this.scene.add.ellipse(x, y + 24, 46, 18, 0x000000, 0.3).setDepth(2);
-    this.scene.add.rectangle(x, y + 8, 14, 34, 0x5c3317).setDepth(2);
-    this.scene.add.circle(x - 10, y - 16, 26, 0x166534).setDepth(3);
-    this.scene.add.circle(x + 10, y - 20, 28, 0x15803d).setDepth(3);
-    this.scene.add.circle(x, y - 36, 24, 0x22c55e).setDepth(4);
+  private createTree(x: number, y: number, variant: 1 | 2 = 1): void {
+    this.scene.add.ellipse(x, y + 36, 44, 14, 0x000000, 0.25).setDepth(2);
+    const treeKey = variant === 2 ? 'sprout_tree2' : 'sprout_tree1';
+    this.scene.add.image(x, y, treeKey).setScale(2.0).setDepth(3);
   }
 
   // --- ВОРОТА НА ГРАНИЦЕ (x = 960) ---

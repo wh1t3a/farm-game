@@ -48,87 +48,95 @@ export class Phase1 {
   }
 
   public createLandscape(worldWidth: number, height: number): void {
-    // Фон: тайлированная текстура травы из Sprout Lands (176x112)
-    // Покрываем весь мир повторяющимся тайлом
-    const grassTile = this.scene.add.tileSprite(
-      worldWidth / 2, height / 2, worldWidth, height, 'sprout_grass'
+    // Бесшовный аутентичный газон Sprout Lands (16x16 бесшовный тайл) на весь мир
+    this.scene.add.tileSprite(
+      worldWidth / 2, height / 2, worldWidth, height, 'sprout_grass_tile'
     ).setDepth(0);
 
-    // Тёмное пахотное поле (тайловый грунт) для зоны грядок Фазы 1
-    const dirtField = this.scene.add.tileSprite(
-      480, 360, 680, 520, 'sprout_tilled_dirt'
-    ).setDepth(1).setAlpha(0.85);
+    // Зона обработанной земли под грядки Фазы 1
+    this.scene.add.tileSprite(
+      490, 365, 520, 480, 'sprout_dirt_tile'
+    ).setDepth(1).setAlpha(0.65);
 
-    // Дорожки из тайла paths
-    const path1 = this.scene.add.tileSprite(190, 270, 180, 32, 'sprout_paths').setDepth(2);
-    const path2 = this.scene.add.tileSprite(190, 490, 180, 32, 'sprout_paths').setDepth(2);
-    const path3 = this.scene.add.tileSprite(800, 220, 160, 32, 'sprout_paths').setDepth(2);
-    const path4 = this.scene.add.tileSprite(800, 460, 160, 32, 'sprout_paths').setDepth(2);
+    // Дорожки из гравия
+    this.scene.add.tileSprite(190, 270, 180, 24, 'sprout_paths').setDepth(2);
+    this.scene.add.tileSprite(190, 490, 180, 24, 'sprout_paths').setDepth(2);
+    this.scene.add.tileSprite(800, 220, 140, 24, 'sprout_paths').setDepth(2);
+    this.scene.add.tileSprite(800, 460, 140, 24, 'sprout_paths').setDepth(2);
 
     // Верхний забор из спрайтов fences (16x16 кадры)
     for (let x = 40; x < worldWidth - 20; x += 32) {
       this.scene.add.sprite(x, 92, 'sprout_fences', 0).setScale(2).setDepth(2);
     }
 
-    // Деревья (декоративные)
-    this.createTree(80, 160);
-    this.createTree(890, 100);
-    this.createTree(920, 570);
+    // Декоративные пиксель-арт деревья из пака Sprout Lands
+    this.createTree(75, 140, 1);
+    this.createTree(135, 120, 2);
+    this.createTree(720, 130, 1);
+    this.createTree(790, 140, 2);
+    this.createTree(880, 100, 1);
+    this.createTree(920, 560, 2);
+
+    // Полянки полевых цветов
+    this.scene.add.image(180, 160, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(240, 390, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(740, 380, 'sprout_flower1').setScale(1.5).setDepth(2);
+    this.scene.add.image(770, 540, 'sprout_flower1').setScale(1.5).setDepth(2);
   }
 
-  public createTree(x: number, y: number): void {
-    this.scene.add.ellipse(x, y + 24, 46, 18, 0x000000, 0.3).setDepth(2);
-    this.scene.add.rectangle(x, y + 8, 14, 34, 0x5c3317).setDepth(2);
-    this.scene.add.circle(x - 10, y - 16, 26, 0x166534).setDepth(3);
-    this.scene.add.circle(x + 10, y - 20, 28, 0x15803d).setDepth(3);
-    this.scene.add.circle(x, y - 36, 24, 0x22c55e).setDepth(4);
+  public createTree(x: number, y: number, variant: 1 | 2 = 1): void {
+    this.scene.add.ellipse(x, y + 36, 44, 14, 0x000000, 0.25).setDepth(2);
+    const treeKey = variant === 2 ? 'sprout_tree2' : 'sprout_tree1';
+    this.scene.add.image(x, y, treeKey).setScale(2.0).setDepth(3);
   }
 
   public createWell(onRefill: () => void): void {
     const { wellX, wellY } = PHASE1_LOCATIONS;
-    this.scene.add.ellipse(wellX, wellY + 28, 64, 18, 0x000000, 0.35).setDepth(2);
+    this.scene.add.ellipse(wellX, wellY + 28, 54, 16, 0x000000, 0.25).setDepth(2);
 
-    const base = this.scene.add.rectangle(wellX, wellY, 78, 68, 0x475569);
-    base.setStrokeStyle(4, 0x1e293b);
+    const base = this.scene.add.rectangle(wellX, wellY, 64, 52, 0x475569);
+    base.setStrokeStyle(3, 0x1e293b);
     base.setDepth(3);
 
-    const waterSurface = this.scene.add.circle(wellX, wellY, 24, 0x0284c7);
+    const waterSurface = this.scene.add.circle(wellX, wellY, 18, 0x5299a9);
     waterSurface.setDepth(4);
 
-    const roof = this.scene.add.rectangle(wellX, wellY - 42, 92, 22, 0x854d0e);
+    const roof = this.scene.add.rectangle(wellX, wellY - 32, 74, 18, 0x854d0e);
     roof.setDepth(5);
 
-    this.scene.add.text(wellX, wellY + 44, '💧 КОЛОДЕЦ\n[ПРОБЕЛ]', {
+    this.scene.add.text(wellX, wellY + 38, '💧 КОЛОДЕЦ\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#7dd3fc',
       align: 'center',
       fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(5);
+    }).setOrigin(0.5).setDepth(6);
   }
 
   public createPond(onFish: () => void): void {
     const { pondX, pondY } = PHASE1_LOCATIONS;
 
-    // Чистый водоём — эллиптический пруд
-    const pondBg = this.scene.add.ellipse(pondX, pondY, 110, 80, 0x0369a1).setDepth(2);
-    pondBg.setStrokeStyle(4, 0x0ea5e9);
+    // Мягкая тень под прудом
+    this.scene.add.ellipse(pondX, pondY + 4, 126, 90, 0x000000, 0.2).setDepth(1);
 
-    // Анимированная поверхность воды (тайловые брызги)
-    const waterTile = this.scene.add.tileSprite(pondX, pondY, 64, 48, 'sprout_water').setDepth(3).setAlpha(0.7);
+    // Водоём в палитре Sprout Lands: берег и чистая вода
+    this.scene.add.ellipse(pondX, pondY, 118, 82, 0x3d7068).setDepth(2);
+    this.scene.add.ellipse(pondX, pondY, 108, 72, 0x5299a9).setDepth(3);
 
-    // Кувшинки
-    this.scene.add.circle(pondX - 25, pondY - 15, 8, 0x15803d).setDepth(4);
-    this.scene.add.circle(pondX + 22, pondY + 12, 10, 0x166534).setDepth(4);
-    this.scene.add.circle(pondX + 26, pondY + 10, 3, 0xf472b6).setDepth(5);
+    // Анимированные блики воды
+    this.scene.add.sprite(pondX - 16, pondY - 4, 'sprout_water', 0).setScale(1.5).setDepth(4).setAlpha(0.8);
+    this.scene.add.sprite(pondX + 16, pondY + 8, 'sprout_water', 2).setScale(1.5).setDepth(4).setAlpha(0.8);
 
-    this.scene.add.text(pondX, pondY + 50, '🎣 ПРУД\n[ПРОБЕЛ]', {
+    // Деревянный помост/мостик для рыбалки
+    this.scene.add.image(pondX + 44, pondY + 8, 'sprout_bridge').setScale(1.1).setDepth(5);
+
+    this.scene.add.text(pondX, pondY + 52, '🎣 ПРУД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '11px',
       color: '#67e8f9',
       align: 'center',
       fontStyle: 'bold',
-    }).setOrigin(0.5).setDepth(5);
+    }).setOrigin(0.5).setDepth(6);
 
     // Контейнер золотой рыбы
     this.fishContainer = this.scene.add.container(pondX, pondY).setDepth(6);
@@ -155,13 +163,13 @@ export class Phase1 {
     const { barnX, barnY } = PHASE1_LOCATIONS;
 
     // Тень под зданием
-    this.scene.add.ellipse(barnX, barnY + 52, 140, 24, 0x000000, 0.3).setDepth(2);
+    this.scene.add.ellipse(barnX, barnY + 48, 140, 24, 0x000000, 0.3).setDepth(2);
 
-    // Здание Склада (деревянный дом Sprout Lands — 112x80 цельная текстура)
+    // Здание Склада (деревянный дом Sprout Lands — 112x80)
     this.scene.add.image(barnX, barnY, 'sprout_house').setScale(1.5).setDepth(4);
 
-    // Вывеска склада
-    this.scene.add.text(barnX, barnY - 70, '🏪 СКЛАД\n[ПРОБЕЛ]', {
+    // Вывеска склада (без сундука)
+    this.scene.add.text(barnX, barnY - 68, '🏪 СКЛАД\n[ПРОБЕЛ]', {
       fontFamily: 'system-ui, sans-serif',
       fontSize: '12px',
       color: '#fef08a',
@@ -174,10 +182,13 @@ export class Phase1 {
     const { shopX, shopY } = PHASE1_LOCATIONS;
 
     // Тень под зданием
-    this.scene.add.ellipse(shopX, shopY + 44, 110, 20, 0x000000, 0.3).setDepth(2);
+    this.scene.add.ellipse(shopX, shopY + 44, 120, 22, 0x000000, 0.3).setDepth(2);
 
-    // Мастерская (Shed — 48x48 цельная текстура курятника/сарая)
-    this.scene.add.image(shopX, shopY, 'sprout_shed').setScale(2.2).setDepth(4);
+    // Лавка улучшений: аккуратный деревянный домик мастерской Sprout Lands
+    this.scene.add.image(shopX, shopY - 4, 'sprout_house').setScale(1.25).setDepth(4);
+
+    // Герб с инструментами над входом
+    this.scene.add.sprite(shopX, shopY - 14, 'sprout_tools', 0).setScale(1.8).setDepth(5);
 
     // Вывеска лавки
     this.scene.add.text(shopX, shopY - 60, '🛠️ ЛАВКА УЛУЧШЕНИЙ\n[ПРОБЕЛ]', {

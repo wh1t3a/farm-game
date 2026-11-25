@@ -241,7 +241,12 @@ export class GameScene extends Phaser.Scene {
       frameHeight: 16,
     });
 
-    // Здания и окружение (без chest — нет механики открытия)
+    // Здания и окружение (без chest — сундук исключен)
+    this.load.image('sprout_grass_tile', 'assets/sprout/tilesets/grass_tile.png');
+    this.load.image('sprout_dirt_tile', 'assets/sprout/tilesets/dirt_tile.png');
+    this.load.image('sprout_tree1', 'assets/sprout/objects/tree1.png');
+    this.load.image('sprout_tree2', 'assets/sprout/objects/tree2.png');
+    this.load.image('sprout_flower1', 'assets/sprout/objects/flower1.png');
     this.load.image('sprout_house', 'assets/sprout/tilesets/house.png');
     this.load.image('sprout_shed', 'assets/sprout/objects/shed.png');
     this.load.image('sprout_nature', 'assets/sprout/objects/nature.png');
@@ -440,12 +445,18 @@ export class GameScene extends Phaser.Scene {
       repeat: -1,
     });
 
-    // Курочка (64x32, 16x16 frames = 4 cols × 2 rows)
-    // Используем только ряд 0 (кадры 0-3) — надёжная анимация клевания
+    // Курочка (ряд 1: кадры 4, 5, 6, 7 — полноценная анимация без пустых кадров 2 и 3)
+    this.anims.create({
+      key: 'chicken_walk',
+      frames: this.anims.generateFrameNumbers('sprout_chicken', { frames: [4, 5, 6, 7] }),
+      frameRate: 4,
+      repeat: -1,
+    });
+    // Курочка (ряд 0: кадры 0, 1 — покачивание на месте)
     this.anims.create({
       key: 'chicken_peck',
-      frames: this.anims.generateFrameNumbers('sprout_chicken', { start: 0, end: 3 }),
-      frameRate: 4,
+      frames: this.anims.generateFrameNumbers('sprout_chicken', { frames: [0, 1] }),
+      frameRate: 2,
       repeat: -1,
     });
 
@@ -463,15 +474,15 @@ export class GameScene extends Phaser.Scene {
     this.farmAnimals.forEach((a) => a.destroy());
     this.farmAnimals = [];
 
-    // Курочки на ферме — только анимация клевания (ряд 0, кадры 0-3)
-    const chicken1 = this.add.sprite(220, 210, 'sprout_chicken', 0).setScale(2).setDepth(15);
-    chicken1.play('chicken_peck');
+    // Курочки на ферме — без пустых кадров (никогда не исчезают!)
+    const chicken1 = this.add.sprite(220, 210, 'sprout_chicken', 4).setScale(2).setDepth(15);
+    chicken1.play('chicken_walk');
 
     const chicken2 = this.add.sprite(750, 250, 'sprout_chicken', 0).setScale(2).setDepth(15).setFlipX(true);
     chicken2.play('chicken_peck');
 
-    const chicken3 = this.add.sprite(820, 520, 'sprout_chicken', 0).setScale(2).setDepth(15);
-    chicken3.play('chicken_peck');
+    const chicken3 = this.add.sprite(820, 520, 'sprout_chicken', 4).setScale(2).setDepth(15);
+    chicken3.play('chicken_walk');
 
     // Корова в восточных угодьях (Фаза 2)
     const cow1 = this.add.sprite(1680, 200, 'sprout_cow', 0).setScale(2).setDepth(15);
