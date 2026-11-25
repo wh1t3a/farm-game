@@ -181,6 +181,7 @@ export class Phase1 {
     const { barnX, barnY } = PHASE1_LOCATIONS;
     this.scene.add.ellipse(barnX, barnY + 52, 116, 24, 0x000000, 0.35).setDepth(2);
 
+    // Здание Амбара (Склад)
     this.barn = this.scene.add.rectangle(barnX, barnY, 115, 95, 0x991b1b);
     this.barn.setStrokeStyle(3, 0x5f1111);
     this.barn.setDepth(3);
@@ -192,39 +193,72 @@ export class Phase1 {
     roof.setInteractive({ useHandCursor: true });
     roof.on('pointerdown', onOpenMarket);
 
-    const barnLabel = this.scene.add.text(barnX, barnY - 24, '🏪 СКЛАД\n[ПРОБЕЛ / Клик]', {
+    // Ворота амбара
+    const doorFrame = this.scene.add.rectangle(barnX, barnY + 16, 44, 56, 0x5f1111).setDepth(4);
+    const doorL = this.scene.add.rectangle(barnX - 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
+    const doorR = this.scene.add.rectangle(barnX + 10, barnY + 16, 18, 50, 0x78350f).setDepth(5);
+    doorFrame.setInteractive({ useHandCursor: true }).on('pointerdown', onOpenMarket);
+    doorL.setInteractive({ useHandCursor: true }).on('pointerdown', onOpenMarket);
+    doorR.setInteractive({ useHandCursor: true }).on('pointerdown', onOpenMarket);
+
+    // Ручки дверей
+    this.scene.add.circle(barnX - 3, barnY + 16, 2, 0xfacc15).setDepth(6);
+    this.scene.add.circle(barnX + 3, barnY + 16, 2, 0xfacc15).setDepth(6);
+
+    // Чердачное окошко
+    this.scene.add.rectangle(barnX, barnY - 22, 20, 20, 0x451a03).setDepth(4);
+    this.scene.add.rectangle(barnX, barnY - 22, 16, 16, 0xfef08a, 0.9).setDepth(5);
+
+    const barnLabel = this.scene.add.text(barnX, barnY - 52, '🏪 СКЛАД\n[ПРОБЕЛ / Клик]', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '13px',
+      fontSize: '12px',
       color: '#fef08a',
       fontStyle: 'bold',
       align: 'center',
-    }).setOrigin(0.5).setDepth(5);
+    }).setOrigin(0.5).setDepth(6);
     barnLabel.setInteractive({ useHandCursor: true });
     barnLabel.on('pointerdown', onOpenMarket);
 
-    // Доска цен на бирже (6 культур)
-    const marketBoardContainer = this.scene.add.container(barnX, barnY + 44).setDepth(6);
-    const boardBg = this.scene.add.rectangle(0, 0, 154, 68, 0x0f172a, 0.95);
-    boardBg.setStrokeStyle(2, 0xfacc15);
+    // Отдельная деревянная доска цен на бирже (расположена под складом на ножках, не перекрывает амбар)
+    const boardY = 345;
+    this.scene.add.rectangle(barnX - 48, boardY + 34, 6, 20, 0x5c3317).setDepth(2);
+    this.scene.add.rectangle(barnX + 48, boardY + 34, 6, 20, 0x5c3317).setDepth(2);
+
+    const marketBoardContainer = this.scene.add.container(barnX, boardY).setDepth(6);
+    const boardBg = this.scene.add.rectangle(0, 0, 154, 70, 0x78350f);
+    boardBg.setStrokeStyle(3, 0xd97706);
     boardBg.setInteractive({ useHandCursor: true });
     boardBg.on('pointerdown', onOpenMarket);
 
+    const boardInner = this.scene.add.rectangle(0, 0, 146, 62, 0x451a03);
+    boardInner.setInteractive({ useHandCursor: true });
+    boardInner.on('pointerdown', onOpenMarket);
+
+    const boardHeader = this.scene.add.text(0, -22, '📊 БИРЖА УРОЖАЯ', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '9px',
+      color: '#fef08a',
+      fontStyle: 'bold',
+    }).setOrigin(0.5);
+
     const keys: CropType[] = ['carrot', 'wheat', 'strawberry', 'pumpkin', 'corn', 'watermelon'];
     const coords = [
-      { x: -52, y: -20 },
-      { x: -4, y: -20 },
-      { x: 44, y: -20 },
-      { x: -52, y: 2 },
-      { x: -4, y: 2 },
-      { x: 44, y: 2 },
+      { x: -50, y: -7 },
+      { x: -2, y: -7 },
+      { x: 46, y: -7 },
+      { x: -50, y: 9 },
+      { x: -2, y: 9 },
+      { x: 46, y: 9 },
     ];
+
+    marketBoardContainer.add([boardBg, boardInner, boardHeader]);
 
     keys.forEach((k, idx) => {
       const pos = coords[idx];
       const crop = CROPS[k];
       const t = this.scene.add.text(pos.x, pos.y, `${crop.icon} 10🪙`, {
         fontFamily: 'system-ui, sans-serif',
-        fontSize: '10px',
+        fontSize: '9px',
         color: '#ffffff',
         fontStyle: 'bold',
       });
@@ -232,13 +266,13 @@ export class Phase1 {
       marketBoardContainer.add(t);
     });
 
-    this.marketBoardTimerText = this.scene.add.text(0, 24, 'Смена: 25с', {
+    this.marketBoardTimerText = this.scene.add.text(0, 22, 'Смена: 25с', {
       fontFamily: 'system-ui, sans-serif',
-      fontSize: '9px',
-      color: '#94a3b8',
+      fontSize: '8px',
+      color: '#cbd5e1',
     }).setOrigin(0.5);
 
-    marketBoardContainer.add([boardBg, this.marketBoardTimerText]);
+    marketBoardContainer.add(this.marketBoardTimerText);
   }
 
   public createWorkshopShop(onOpenShop: () => void): void {
@@ -355,10 +389,14 @@ export class Phase1 {
     for (const zone of this.zones) {
       if (zone.unlocked) continue;
 
-      const fence = this.scene.add.rectangle(490, zone.signY, 460, 80, 0x000000, 0.35);
-      fence.setStrokeStyle(2, 0xf59e0b, 0.6);
-      fence.setDepth(10);
-      zone.fences.push(fence);
+      // Аккуратный деревянный заборчик без черных затемнений
+      const railTop = this.scene.add.rectangle(490, zone.signY - 38, 460, 4, 0x78350f).setDepth(4);
+      const railBottom = this.scene.add.rectangle(490, zone.signY + 38, 460, 4, 0x78350f).setDepth(4);
+      zone.fences.push(railTop, railBottom);
+      for (let fx = 280; fx <= 700; fx += 60) {
+        const post = this.scene.add.rectangle(fx, zone.signY, 6, 80, 0x5c3317).setDepth(5);
+        zone.fences.push(post);
+      }
 
       const signBox = this.scene.add.container(zone.signX, zone.signY).setDepth(11);
       const signBg = this.scene.add.rectangle(0, 0, 110, 48, 0x78350f);

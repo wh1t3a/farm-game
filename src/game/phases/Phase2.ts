@@ -188,7 +188,7 @@ export class Phase2 {
   }
 
   private addInteractiveSignBg(w: number, h: number, onClick: () => void): Phaser.GameObjects.Rectangle {
-    const bg = this.scene.add.rectangle(0, 0, w, h, 0x0f172a, 0.94);
+    const bg = this.scene.add.rectangle(0, 0, w, h, 0x78350f);
     bg.setStrokeStyle(2, 0xfacc15);
     bg.setInteractive({ useHandCursor: true });
     bg.on('pointerdown', onClick);
@@ -279,10 +279,14 @@ export class Phase2 {
 
     // Ограждения над грядками Кукурузы и Арбузов строго на x = 1440
     for (const zone of this.zones) {
-      const fence = this.scene.add.rectangle(1440, zone.signY, 490, 80, 0x000000, 0.35);
-      fence.setStrokeStyle(2, 0xf59e0b, 0.6);
-      fence.setDepth(10);
-      zone.fences.push(fence);
+      // Аккуратный деревянный заборчик без черных затемнений
+      const railTop = this.scene.add.rectangle(1440, zone.signY - 38, 490, 4, 0x78350f).setDepth(4);
+      const railBottom = this.scene.add.rectangle(1440, zone.signY + 38, 490, 4, 0x78350f).setDepth(4);
+      zone.fences.push(railTop, railBottom);
+      for (let fx = 1205; fx <= 1675; fx += 60) {
+        const post = this.scene.add.rectangle(fx, zone.signY, 6, 80, 0x5c3317).setDepth(5);
+        zone.fences.push(post);
+      }
 
       const signBox = this.scene.add.container(zone.signX, zone.signY).setDepth(11);
       const signBg = this.scene.add.rectangle(0, 0, 110, 48, 0x78350f);
@@ -352,7 +356,10 @@ export class Phase2 {
 
         this.scene.time.delayedCall(2600, () => {
           if (!this.isCinematic) return;
-          this.scene.cameras.main.pan(480, 320, 1800, 'Sine.easeInOut', false, (_c, backProgress) => {
+          const playerContainer = (this.scene as any).playerContainer;
+          const targetX = playerContainer ? playerContainer.x : 480;
+          const targetY = playerContainer ? playerContainer.y : 320;
+          this.scene.cameras.main.pan(targetX, targetY, 1800, 'Sine.easeInOut', false, (_c, backProgress) => {
             if (backProgress >= 1) {
               this.endCinematic(onComplete);
             }
@@ -379,10 +386,11 @@ export class Phase2 {
     }
     this.isCinematic = false;
 
-    if (!this.unlocked) {
-      this.scene.cameras.main.stopFollow();
-      this.scene.cameras.main.setBounds(0, 0, 960, this.scene.scale.height);
-      this.scene.cameras.main.setScroll(0, 0);
+    // После открытия второй зоны (Клубники) камера больше НЕ фиксируется на зоне 1, а плавно следует за игроком по всему миру!
+    this.scene.cameras.main.setBounds(0, 0, 1920, this.scene.scale.height);
+    const playerContainer = (this.scene as any).playerContainer;
+    if (playerContainer) {
+      this.scene.cameras.main.startFollow(playerContainer, true, 0.08, 0.08);
     }
 
     if (onComplete) onComplete();

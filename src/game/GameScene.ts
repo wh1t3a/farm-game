@@ -337,6 +337,8 @@ export class GameScene extends Phaser.Scene {
     if (zone.cropType === 'strawberry' || zone.id === 3) {
       this.playVictoryFanfare();
       this.phase2.onStrawberryUnlocked(() => {
+        this.cameras.main.setBounds(0, 0, WORLD_WIDTH, this.scale.height);
+        this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
         this.showFloatingNotice(this.playerContainer.x, this.playerContainer.y - 50, '🍓 Клубника открыта! Ворота восточных земель ждут (1 🪙)', '#facc15');
       });
     }
@@ -517,6 +519,12 @@ export class GameScene extends Phaser.Scene {
 
     // Клавиша ESC
     this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC).on('down', () => {
+      if (this.isCinematicActive) {
+        this.phase2.endCinematic();
+        this.cameras.main.setBounds(0, 0, WORLD_WIDTH, this.scale.height);
+        this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
+        return;
+      }
       if (this.isMarketOpen) {
         this.closeMarketModal();
       } else if (this.isShopOpen) {
@@ -533,6 +541,7 @@ export class GameScene extends Phaser.Scene {
     this.marketModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false);
 
     const backdrop = this.add.rectangle(0, 0, width * 2, height * 2, 0x000000, 0.75).setInteractive();
+    backdrop.on('pointerdown', () => this.closeMarketModal());
     const panel = this.add.rectangle(0, 0, 520, 460, 0x0f172a);
     panel.setStrokeStyle(3, 0xfacc15);
 
@@ -899,6 +908,7 @@ export class GameScene extends Phaser.Scene {
     this.shopModal = this.add.container(width / 2, height / 2).setDepth(110).setVisible(false);
 
     const backdrop = this.add.rectangle(0, 0, width * 2, height * 2, 0x000000, 0.75).setInteractive();
+    backdrop.on('pointerdown', () => this.closeShopModal());
     const panel = this.add.rectangle(0, 0, 540, 500, 0x0f172a);
     panel.setStrokeStyle(3, 0x38bdf8);
 
@@ -1383,6 +1393,7 @@ export class GameScene extends Phaser.Scene {
 
     // Полупрозрачный фон, блокирующий клики
     const backdrop = this.add.rectangle(0, 0, width * 2, height * 2, 0x000000, 0.75).setInteractive();
+    backdrop.on('pointerdown', () => this.togglePause());
 
     const panel = this.add.rectangle(0, 0, 500, 350, 0x0f172a);
     panel.setStrokeStyle(3, 0x38bdf8);
@@ -1500,7 +1511,11 @@ export class GameScene extends Phaser.Scene {
     if (this.isCinematicActive) {
       if (this.actionKeys.some((k) => Phaser.Input.Keyboard.JustDown(k))) {
         this.cameras.main.pan(this.playerContainer.x, this.playerContainer.y, 400, 'Power1', false, (_c, p) => {
-          if (p >= 1) this.phase2.endCinematic();
+          if (p >= 1) {
+            this.phase2.endCinematic();
+            this.cameras.main.setBounds(0, 0, WORLD_WIDTH, this.scale.height);
+            this.cameras.main.startFollow(this.playerContainer, true, 0.08, 0.08);
+          }
         });
       }
       return;
@@ -1597,7 +1612,9 @@ export class GameScene extends Phaser.Scene {
       return Phaser.Math.Distance.Between(px, py, this.pondX, this.pondY) <= 70;
     }
     if (this.pendingTargetObject.type === 'barn') {
-      return Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 20;
+      const nearBarn = Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 25;
+      const nearBoard = Phaser.Math.Distance.Between(px, py, this.barnX, 345) <= INTERACT_RADIUS + 25;
+      return nearBarn || nearBoard;
     }
     if (this.pendingTargetObject.type === 'shop') {
       return Phaser.Math.Distance.Between(px, py, this.shopX, this.shopY) <= INTERACT_RADIUS + 20;
@@ -1937,12 +1954,17 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // 3. Амбар (Рынок)
-    if (Math.abs(clickedX - this.barnX) <= 85 && Math.abs(clickedY - (this.barnY + 15)) <= 75) {
-      if (Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 30) {
+    // 3. Амбар / Доска биржи (Рынок)
+    const isBarnClicked = Math.abs(clickedX - this.barnX) <= 85 && Math.abs(clickedY - this.barnY) <= 65;
+    const isBoardClicked = Math.abs(clickedX - this.barnX) <= 85 && Math.abs(clickedY - 345) <= 45;
+    if (isBarnClicked || isBoardClicked) {
+      const nearBarn = Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 30;
+      const nearBoard = Phaser.Math.Distance.Between(px, py, this.barnX, 345) <= INTERACT_RADIUS + 30;
+      if (nearBarn || nearBoard) {
         this.openMarketModal();
       } else {
-        this.targetMovePoint = { x: this.barnX - 55, y: this.barnY };
+        const destY = isBoardClicked ? 345 : this.barnY;
+        this.targetMovePoint = { x: this.barnX - 55, y: destY };
         this.pendingTargetObject = { type: 'barn' };
       }
       return;
@@ -2032,8 +2054,11 @@ export class GameScene extends Phaser.Scene {
       return;
     }
 
-    // Амбар (Рынок)
-    if (Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 20) {
+    // Амбар (Рынок) / Доска котировок
+    if (
+      Phaser.Math.Distance.Between(px, py, this.barnX, this.barnY) <= INTERACT_RADIUS + 20 ||
+      Phaser.Math.Distance.Between(px, py, this.barnX, 345) <= INTERACT_RADIUS + 20
+    ) {
       this.showPrompt('[ПРОБЕЛ / Клик] Открыть биржу Склада');
       return;
     }
