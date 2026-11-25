@@ -70,9 +70,9 @@ export class Phase1 {
     }
 
     // Декоративные пиксель-арт деревья (равномерно распределены, без скоплений)
-    this.createTree(75, 145, 1);
-    this.createTree(755, 130, 2);
-    this.createTree(915, 575, 1);
+    this.createTree(75, 165, 1);
+    this.createTree(755, 155, 2);
+    this.createTree(915, 595, 1);
 
     // Полянки цветов и единичные природные объекты (разнесены по разным частям карты)
     this.scene.add.image(155, 365, 'sprout_flower1').setScale(1.5).setDepth(2);
@@ -84,10 +84,12 @@ export class Phase1 {
   }
 
   public createTree(x: number, y: number, variant: 1 | 2 = 1): void {
-    const shadowW = variant === 2 ? 40 : 28;
-    this.scene.add.ellipse(x, y + 26, shadowW, 12, 0x000000, 0.25).setDepth(2);
+    const shadowW = variant === 2 ? 38 : 26;
+    const shadowH = variant === 2 ? 14 : 10;
+    this.scene.add.ellipse(x, y + 2, shadowW, shadowH, 0x000000, 0.28).setDepth(2);
     const treeKey = variant === 2 ? 'sprout_tree2' : 'sprout_tree1';
-    this.scene.add.image(x, y, treeKey).setScale(2.0).setDepth(3);
+    const originY = variant === 2 ? (28 / 32) : (25.5 / 32);
+    this.scene.add.image(x, y, treeKey).setOrigin(0.5, originY).setScale(2.0).setDepth(3);
   }
 
   public createWell(onRefill: () => void): void {

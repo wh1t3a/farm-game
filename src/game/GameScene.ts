@@ -63,7 +63,7 @@ export class GameScene extends Phaser.Scene {
   private playerContainer!: Phaser.GameObjects.Container;
   private playerSprite!: Phaser.GameObjects.Sprite;
   private playerFacing: 'up' | 'down' | 'left' | 'right' = 'down';
-  private farmAnimals: Phaser.GameObjects.Sprite[] = [];
+  private farmAnimals: (Phaser.GameObjects.Sprite | Phaser.GameObjects.Shape)[] = [];
   private workerSprite: Phaser.GameObjects.Sprite | null = null;
   private cursors!: Phaser.Types.Input.Keyboard.CursorKeys;
   private wasd!: Record<'up' | 'down' | 'left' | 'right', Phaser.Input.Keyboard.Key>;
@@ -516,11 +516,12 @@ export class GameScene extends Phaser.Scene {
       onRepeat: () => chicken3.setFlipX(false),
     });
 
-    // Корова в восточных угодьях (Фаза 2) — на свободном краю поляны, вдали от грядок
-    const cow1 = this.add.sprite(1835, 165, 'sprout_cow', 0).setScale(2).setDepth(15);
+    // Корова в восточных угодьях (Фаза 2) — у самого края поляны у восточной границы, вдали от всех грядок
+    const cowShadow = this.add.ellipse(1865, 178, 42, 14, 0x000000, 0.25).setDepth(14);
+    const cow1 = this.add.sprite(1865, 160, 'sprout_cow', 0).setScale(2).setDepth(15);
     cow1.play('cow_chew');
 
-    this.farmAnimals.push(chicken1, chicken2, chicken3, cow1);
+    this.farmAnimals.push(chicken1, chicken2, chicken3, cow1, cowShadow);
   }
 
   private createPlayer(): void {
@@ -583,6 +584,13 @@ export class GameScene extends Phaser.Scene {
       fontSize: '12px',
       color: '#e2e8f0',
     }).setDepth(36).setScrollFactor(0);
+
+    // Метка версии игры (для удобного контроля обновлений)
+    this.add.text(width - 24, 70, 'v1.2.6', {
+      fontFamily: 'system-ui, sans-serif',
+      fontSize: '10px',
+      color: '#64748b',
+    }).setOrigin(1, 0.5).setDepth(36).setScrollFactor(0);
 
     // Кнопка паузы
     this.pauseButtonText = this.add.text(width - 440, 34, '⏸️ Пауза [P]', {
